@@ -295,91 +295,101 @@ class SurfaceEffectsBaker:
         
         return 1.0 - (occlusion / samples)
     
-    def apply_surface_effects_to_texture(self, img: Image.Image, model_path: str,
-                                        curvature_strength: float = 0.5,
+    def apply_surface_effects_to_texture(self, img: Image.Image,
                                         edge_highlight: float = 0.3,
-                                        crevice_darken: float = 0.4,
-                                        edge_hue_shift: float = 30.0,
-                                        crevice_hue_shift: float = -30.0,
-                                        edge_saturation: float = 0.2) -> Image.Image:
-        """
-        Apply surface effects (curvature-based) from 3D model to texture
+                                        edge_color: tuple = (255, 136, 0),
+                                        edge_map_path: str = None) -> Image.Image:
+        """Apply surface effects using pre-baked edge map
         
         Args:
             img: Input texture image
-            model_path: Path to 3D model file
-            curvature_strength: Sensitivity to curvature
-            edge_highlight: Brightness boost on convex edges (0-1)
-            crevice_darken: Darkening in concave areas (0-1)
-            edge_hue_shift: Hue shift on edges (degrees)
-            crevice_hue_shift: Hue shift in crevices (degrees)
-            edge_saturation: Saturation change on edges (-1 to 1)
+            edge_highlight: Brightness boost on edges (0-1)
+            edge_color: RGB tuple (0-255) to blend onto edges
+            edge_map_path: Path to pre-baked edge map (REQUIRED)
             
         Returns:
             Texture with surface effects applied
         """
-        # Load model if needed
-        if Path(model_path).suffix.lower() == '.obj':
-            if not self.load_obj(model_path):
-                print("Failed to load model, skipping surface effects")
-                return img
-        else:
-            print(f"Unsupported model format: {Path(model_path).suffix}")
-            print("Only OBJ is currently supported. FBX/glTF support coming soon!")
+        if not edge_map_path or not Path(edge_map_path).exists():
+            print("ERROR: Edge map is required. Please bake edge map first.")
             return img
         
-        # Compute curvature map
         width, height = img.size
-        curvature_map = self.compute_curvature_map(width, height, curvature_strength)
         
-        # Apply effects to image
+        try:
+            # Load edge map
+            edge_img = Image.open(edge_map_path).convert('L')
+            if edge_img.size != (width, height):
+                edge_img = edge_img.resize((width, height), Image.BILINEAR)
+            # Convert to normalized array [0, 1]
+            edge_mask = np.array(edge_img, dtype=np.float32) / 255.0
+            print(f"Using edge map: {Path(edge_map_path).name}")
+        except Exception as e:
+            print(f"Failed to load edge map: {e}")
+            return img
+        
+        # Convert image to array
         img_array = np.array(img, dtype=np.float32)
         
-        # Separate positive (edges) and negative (crevices) curvature
-        edge_mask = np.maximum(0, curvature_map)  # Convex areas
-        crevice_mask = np.maximum(0, -curvature_map)  # Concave areas
-        
-        # Apply brightness changes
+        # Apply brightness boost on edges
         for c in range(3):  # RGB channels
-            # Brighten edges
             img_array[:, :, c] += edge_highlight * edge_mask * 255
-            # Darken crevices
-            img_array[:, :, c] *= (1.0 - crevice_darken * crevice_mask)
         
         img_array = np.clip(img_array, 0, 255)
         
-        # Apply color tinting
-        if edge_hue_shift != 0 or crevice_hue_shift != 0 or edge_saturation != 0:
-            img_hsv = np.zeros_like(img_array)
-            
-            for y in range(height):
-                for x in range(width):
-                    r, g, b = img_array[y, x] / 255.0
-                    h, s, v = colorsys.rgb_to_hsv(r, g, b)
-                    
-                    edge_amount = edge_mask[y, x]
-                    crevice_amount = crevice_mask[y, x]
-                    
-                    # Apply edge hue shift
-                    if edge_hue_shift != 0 and edge_amount > 0:
-                        h = (h + (edge_hue_shift / 360.0) * edge_amount) % 1.0
-                    
-                    # Apply crevice hue shift
-                    if crevice_hue_shift != 0 and crevice_amount > 0:
-                        h = (h + (crevice_hue_shift / 360.0) * crevice_amount) % 1.0
-                    
-                    # Apply edge saturation
-                    if edge_saturation != 0 and edge_amount > 0:
-                        s = np.clip(s + edge_saturation * edge_amount, 0, 1)
-                    
-                    r, g, b = colorsys.hsv_to_rgb(h, s, v)
-                    img_hsv[y, x] = [r * 255, g * 255, b * 255]
-            
-            img_array = img_hsv
+        # Blend edge color using mask
+        edge_color_array = np.array(edge_color, dtype=np.float32)
+        blend_strength = 0.7  # How much edge color to blend (increased for visibility)
         
-        # Convert back to image
+        for c in range(3):
+            # Where edge_mask is high (white), blend more edge color
+            img_array[:, :, c] = img_array[:, :, c] * (1 - edge_mask * blend_strength) + \
+                                edge_color_array[c] * edge_mask * blend_strength
+        
         img_array = np.clip(img_array, 0, 255).astype(np.uint8)
-        return Image.fromarray(img_array, mode='RGB')
+        return Image.fromarray(img_array)
+    
+    def bake_curvature_map(self, model_path: str, output_path: str, 
+                          resolution: int = 1024, strength: float = 5.0) -> bool:
+        """
+        Bake curvature map from 3D model to a PNG file
+        
+        Args:
+            model_path: Path to 3D model file
+            output_path: Path to save curvature map PNG
+            resolution: Map resolution (width, height will match aspect)
+            strength: Curvature detection strength
+            
+        Returns:
+            True if successful
+        """
+        try:
+            # Load model
+            if Path(model_path).suffix.lower() == '.obj':
+                if not self.load_obj(model_path):
+                    print("Failed to load model")
+                    return False
+            else:
+                print(f"Unsupported model format: {Path(model_path).suffix}")
+                return False
+            
+            # Compute curvature map
+            curvature_map = self.compute_curvature_map(resolution, resolution, strength)
+            
+            # Normalize to 0-255 range (positive values only, edges)
+            curvature_map = np.maximum(0, curvature_map)  # Only positive curvature
+            curvature_map = np.clip(curvature_map * 255, 0, 255).astype(np.uint8)
+            
+            # Save as grayscale PNG
+            img = Image.fromarray(curvature_map, mode='L')
+            img.save(output_path)
+            
+            print(f"Curvature map saved to: {output_path}")
+            return True
+            
+        except Exception as e:
+            print(f"Error baking curvature map: {e}")
+            return False
     
     def apply_ao_to_texture(self, img: Image.Image, model_path: str,
                            samples: int = 32, distance: float = 0.5,

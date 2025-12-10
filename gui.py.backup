@@ -2,12 +2,11 @@
 Texture Pixelator GUI - Simple interface for parameter tweaking
 """
 import tkinter as tk
-from tkinter import ttk, filedialog, messagebox, colorchooser, simpledialog
+from tkinter import ttk, filedialog, messagebox
 import os
 from pathlib import Path
 from texture_pixelator import TexturePixelator
 from batch_process import BatchProcessor
-from project_manager import ProjectManager
 from PIL import Image, ImageTk, ImageFilter
 
 
@@ -15,32 +14,21 @@ class PixelatorGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("Texture Pixelator")
-        self.root.geometry("1200x900")
-        self.root.minsize(900, 600)
+        self.root.geometry("1100x820")
         self.root.resizable(True, True)
         
         self.pixelator = TexturePixelator()
         self.batch_processor = BatchProcessor()
-        self.project_manager = ProjectManager()
         
         self.preview_image = None
         self.preview_photo = None
         self.preview_zoom = 1.0
         self.current_preview_path = None
-        self.current_project_path = None
-        self.project_modified = False
-        
-        # Color picker variables
-        self.edge_color_var = '#FF8800'  # Orange
-        self.crevice_color_var = '#331100'  # Dark brown
         
         self.setup_ui()
     
     def setup_ui(self):
         """Create the GUI layout"""
-        
-        # Create menu bar
-        self.setup_menu()
         
         # Main container with two columns
         container = ttk.Frame(self.root, padding="10")
@@ -54,21 +42,21 @@ class PixelatorGUI:
         self.notebook = ttk.Notebook(main_frame)
         self.notebook.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(0, 10))
         
-        # Create scrollable tab frames
-        file_tab_canvas, file_tab = self.create_scrollable_tab()
-        ao_tab_canvas, ao_tab = self.create_scrollable_tab()
-        prep_tab_canvas, prep_tab = self.create_scrollable_tab()
-        pixel_tab_canvas, pixel_tab = self.create_scrollable_tab()
+        # Create tab frames
+        file_tab = ttk.Frame(self.notebook, padding="10")
+        prep_tab = ttk.Frame(self.notebook, padding="10")
+        ao_tab = ttk.Frame(self.notebook, padding="10")
+        pixel_tab = ttk.Frame(self.notebook, padding="10")
         
-        self.notebook.add(file_tab_canvas, text="1. Files")
-        self.notebook.add(ao_tab_canvas, text="2. Surface Effects")
-        self.notebook.add(prep_tab_canvas, text="3. Pre-Process")
-        self.notebook.add(pixel_tab_canvas, text="4. Pixelate")
+        self.notebook.add(file_tab, text="1. Files")
+        self.notebook.add(prep_tab, text="2. Pre-Process")
+        self.notebook.add(ao_tab, text="3. Surface Effects")
+        self.notebook.add(pixel_tab, text="4. Pixelate")
         
         # Build each tab
         self.setup_file_tab(file_tab)
-        self.setup_surface_tab(ao_tab)
         self.setup_prep_tab(prep_tab)
+        self.setup_surface_tab(ao_tab)
         self.setup_pixel_tab(pixel_tab)
         
         # Right panel for preview
@@ -91,7 +79,7 @@ class PixelatorGUI:
         canvas_frame = ttk.Frame(preview_frame)
         canvas_frame.pack(fill=tk.BOTH, expand=True)
         
-        self.preview_canvas = tk.Canvas(canvas_frame, bg='#2b2b2b', highlightthickness=1, highlightbackground='#555')
+        self.preview_canvas = tk.Canvas(canvas_frame, width=400, height=640, bg='#2b2b2b', highlightthickness=1, highlightbackground='#555')
         v_scrollbar = ttk.Scrollbar(canvas_frame, orient=tk.VERTICAL, command=self.preview_canvas.yview)
         h_scrollbar = ttk.Scrollbar(canvas_frame, orient=tk.HORIZONTAL, command=self.preview_canvas.xview)
         
@@ -109,16 +97,14 @@ class PixelatorGUI:
         self.preview_canvas.bind("<Button-4>", self.on_mousewheel_zoom)  # Linux
         self.preview_canvas.bind("<Button-5>", self.on_mousewheel_zoom)  # Linux
         
-        # Preview placeholder text (will be repositioned on first update)
+        # Preview placeholder text
         self.preview_text_id = self.preview_canvas.create_text(
-            0, 0, 
+            200, 320, 
             text="No preview yet\n\nProcess a file to see preview", 
             fill='#888', 
             font=("TkDefaultFont", 11),
             justify=tk.CENTER
         )
-        # Update placeholder position after canvas is rendered
-        self.root.after(100, self.center_placeholder_text)
         
         # Process buttons at bottom of main frame
         button_frame = ttk.Frame(main_frame)
@@ -149,16 +135,10 @@ class PixelatorGUI:
         self.error_label = ttk.Label(self.error_frame, text="", foreground="red", wraplength=500, justify=tk.LEFT)
         self.error_label.pack(fill=tk.X)
         
-        # Configure grid weights for responsive layout
-        container.columnconfigure(0, weight=2)  # Left panel (controls)
-        container.columnconfigure(1, weight=3)  # Right panel (preview)
+        # Configure grid weights
+        container.columnconfigure(0, weight=1)
+        container.columnconfigure(1, weight=2)
         container.rowconfigure(0, weight=1)
-        main_frame.columnconfigure(0, weight=1)
-        main_frame.rowconfigure(0, weight=10)  # Notebook takes most space
-        main_frame.rowconfigure(1, weight=0)   # Process buttons fixed size
-        main_frame.rowconfigure(2, weight=0)   # Status fixed size
-        main_frame.rowconfigure(3, weight=0)   # Success fixed size
-        main_frame.rowconfigure(4, weight=0)   # Error fixed size
         self.root.columnconfigure(0, weight=1)
         self.root.rowconfigure(0, weight=1)
         
@@ -180,8 +160,8 @@ class PixelatorGUI:
         # Single file mode
         ttk.Label(file_frame, text="Single File:").grid(row=1, column=0, sticky=tk.W, pady=5)
         self.input_file_var = tk.StringVar()
-        single_entry = ttk.Entry(file_frame, textvariable=self.input_file_var, width=30)
-        single_entry.grid(row=1, column=1, padx=5, sticky=(tk.W, tk.E))
+        single_entry = ttk.Entry(file_frame, textvariable=self.input_file_var, width=50)
+        single_entry.grid(row=1, column=1, padx=5)
         ttk.Button(file_frame, text="Browse", command=self.browse_input_file).grid(row=1, column=2)
         ttk.Label(file_frame, text="Select one image file to pixelate", 
                  foreground="gray", font=("TkDefaultFont", 8)).grid(row=2, column=1, sticky=tk.W, padx=5)
@@ -189,8 +169,8 @@ class PixelatorGUI:
         # Batch mode
         ttk.Label(file_frame, text="Batch Folder:").grid(row=3, column=0, sticky=tk.W, pady=5)
         self.input_folder_var = tk.StringVar()
-        batch_entry = ttk.Entry(file_frame, textvariable=self.input_folder_var, width=30)
-        batch_entry.grid(row=3, column=1, padx=5, sticky=(tk.W, tk.E))
+        batch_entry = ttk.Entry(file_frame, textvariable=self.input_folder_var, width=50)
+        batch_entry.grid(row=3, column=1, padx=5)
         ttk.Button(file_frame, text="Browse", command=self.browse_input_folder).grid(row=3, column=2)
         ttk.Label(file_frame, text="Select folder containing multiple images to process all at once", 
                  foreground="gray", font=("TkDefaultFont", 8)).grid(row=4, column=1, sticky=tk.W, padx=5)
@@ -198,14 +178,11 @@ class PixelatorGUI:
         # Output location
         ttk.Label(file_frame, text="Output:").grid(row=5, column=0, sticky=tk.W, pady=5)
         self.output_var = tk.StringVar()
-        output_entry = ttk.Entry(file_frame, textvariable=self.output_var, width=30)
-        output_entry.grid(row=5, column=1, padx=5, sticky=(tk.W, tk.E))
+        output_entry = ttk.Entry(file_frame, textvariable=self.output_var, width=50)
+        output_entry.grid(row=5, column=1, padx=5)
         ttk.Button(file_frame, text="Browse", command=self.browse_output).grid(row=5, column=2)
         ttk.Label(file_frame, text="Where to save: file path (single) or folder (batch)", 
                  foreground="gray", font=("TkDefaultFont", 8)).grid(row=6, column=1, sticky=tk.W, padx=5)
-        
-        # Make column 1 expandable
-        file_frame.columnconfigure(1, weight=1)
     
     def setup_prep_tab(self, parent):
         """Setup Pre-Process tab"""
@@ -262,7 +239,7 @@ class PixelatorGUI:
         ttk.Checkbutton(enable_frame, text="Enable Surface Effects (requires 3D model)", 
                        variable=self.enable_surface_var, command=self.on_surface_toggle).grid(row=0, column=0, columnspan=3, sticky=tk.W, pady=5)
         
-        ttk.Label(enable_frame, text="Blend custom colors onto edges from baked edge map", 
+        ttk.Label(enable_frame, text="Add highlights to edges/ridges, darken crevices based on 3D mesh", 
                  foreground="gray", font=("TkDefaultFont", 9, "italic")).grid(row=1, column=0, columnspan=3, sticky=tk.W, pady=(0, 10))
         
         # === 3D MODEL INPUT ===
@@ -331,84 +308,55 @@ class PixelatorGUI:
         tint_frame = ttk.LabelFrame(parent, text="Edge/Crevice Color Tinting", padding="10")
         tint_frame.grid(row=3, column=0, sticky=(tk.W, tk.E), pady=(0, 10))
         
-        ttk.Label(tint_frame, text="Tint edges and crevices with custom colors", 
+        ttk.Label(tint_frame, text="Shift colors on edges and in crevices", 
                  foreground="gray", font=("TkDefaultFont", 9, "italic")).grid(row=0, column=0, columnspan=3, sticky=tk.W, pady=(0, 10))
         
-        # Edge Color Picker
-        ttk.Label(tint_frame, text="Edge Color:").grid(row=1, column=0, sticky=tk.W, pady=5)
-        
-        # Create canvas for circular color indicator
-        self.edge_color_canvas = tk.Canvas(tint_frame, width=30, height=30, 
-                                          highlightthickness=1, highlightbackground="#999", cursor="")
-        self.edge_color_canvas.grid(row=1, column=1, sticky=tk.W, padx=5)
-        self.edge_color_canvas.bind("<Button-1>", lambda e: self.pick_edge_color())
-        self.edge_color_circle = self.edge_color_canvas.create_oval(2, 2, 28, 28, 
-                                                                    fill=self.edge_color_var, outline="#666", width=2)
-        
-        ttk.Label(tint_frame, text="Color to blend onto convex edges/ridges", 
+        # Edge Hue shift
+        ttk.Label(tint_frame, text="Edge Hue Shift:").grid(row=1, column=0, sticky=tk.W, pady=5)
+        self.edge_hue_shift_var = tk.DoubleVar(value=30.0)
+        self.edge_hue_scale = ttk.Scale(tint_frame, from_=-180, to=180, 
+                                       variable=self.edge_hue_shift_var, orient=tk.HORIZONTAL, 
+                                       length=200, state="disabled")
+        self.edge_hue_scale.grid(row=1, column=1, sticky=tk.W, padx=5)
+        self.edge_hue_label = ttk.Label(tint_frame, text="30°")
+        self.edge_hue_label.grid(row=1, column=2, sticky=tk.W)
+        self.edge_hue_shift_var.trace_add('write', self.update_edge_hue_label)
+        ttk.Label(tint_frame, text="Hue shift on edges (e.g., +30° = warmer highlights)", 
                  foreground="gray", font=("TkDefaultFont", 8)).grid(row=2, column=1, sticky=tk.W, padx=5)
         
-        # Crevice Color Picker
-        ttk.Label(tint_frame, text="Crevice Color:").grid(row=3, column=0, sticky=tk.W, pady=5)
-        
-        # Create canvas for circular color indicator
-        self.crevice_color_canvas = tk.Canvas(tint_frame, width=30, height=30, 
-                                             highlightthickness=1, highlightbackground="#999", cursor="")
-        self.crevice_color_canvas.grid(row=3, column=1, sticky=tk.W, padx=5)
-        self.crevice_color_canvas.bind("<Button-1>", lambda e: self.pick_crevice_color())
-        self.crevice_color_circle = self.crevice_color_canvas.create_oval(2, 2, 28, 28, 
-                                                                          fill=self.crevice_color_var, outline="#666", width=2)
-        
-        ttk.Label(tint_frame, text="Color to blend into concave crevices/shadows", 
+        # Crevice Hue shift
+        ttk.Label(tint_frame, text="Crevice Hue Shift:").grid(row=3, column=0, sticky=tk.W, pady=5)
+        self.crevice_hue_shift_var = tk.DoubleVar(value=-30.0)
+        self.crevice_hue_scale = ttk.Scale(tint_frame, from_=-180, to=180, 
+                                          variable=self.crevice_hue_shift_var, orient=tk.HORIZONTAL, 
+                                          length=200, state="disabled")
+        self.crevice_hue_scale.grid(row=3, column=1, sticky=tk.W, padx=5)
+        self.crevice_hue_label = ttk.Label(tint_frame, text="-30°")
+        self.crevice_hue_label.grid(row=3, column=2, sticky=tk.W)
+        self.crevice_hue_shift_var.trace_add('write', self.update_crevice_hue_label)
+        ttk.Label(tint_frame, text="Hue shift in crevices (e.g., -30° = cooler shadows)", 
                  foreground="gray", font=("TkDefaultFont", 8)).grid(row=4, column=1, sticky=tk.W, padx=5)
         
         # Saturation boost
         ttk.Label(tint_frame, text="Edge Saturation:").grid(row=5, column=0, sticky=tk.W, pady=5)
-        self.edge_saturation_var = tk.DoubleVar(value=0.2)
+        self.edge_sat_var = tk.DoubleVar(value=0.2)
         self.edge_sat_scale = ttk.Scale(tint_frame, from_=-1.0, to=1.0, 
-                                       variable=self.edge_saturation_var, orient=tk.HORIZONTAL, 
+                                       variable=self.edge_sat_var, orient=tk.HORIZONTAL, 
                                        length=200, state="disabled")
         self.edge_sat_scale.grid(row=5, column=1, sticky=tk.W, padx=5)
         self.edge_sat_label = ttk.Label(tint_frame, text="0.20")
         self.edge_sat_label.grid(row=5, column=2, sticky=tk.W)
-        self.edge_saturation_var.trace_add('write', self.update_edge_sat_label)
+        self.edge_sat_var.trace_add('write', self.update_edge_sat_label)
         ttk.Label(tint_frame, text="Saturation change on edges (-1 = gray, +1 = vibrant)", 
                  foreground="gray", font=("TkDefaultFont", 8)).grid(row=6, column=1, sticky=tk.W, padx=5)
-        
-        # === BAKE MAPS ===
-        bake_frame = ttk.LabelFrame(parent, text="Bake Maps", padding="10")
-        bake_frame.grid(row=4, column=0, sticky=(tk.W, tk.E), pady=(0, 10))
-        
-        ttk.Label(bake_frame, text="Pre-generate curvature maps to save processing time", 
-                 foreground="gray", font=("TkDefaultFont", 9, "italic")).grid(row=0, column=0, columnspan=3, sticky=tk.W, pady=(0, 10))
-        
-        # Map resolution
-        ttk.Label(bake_frame, text="Map Resolution:").grid(row=1, column=0, sticky=tk.W, pady=5)
-        self.bake_resolution_var = tk.IntVar(value=1024)
-        ttk.Spinbox(bake_frame, from_=256, to=4096, increment=256, textvariable=self.bake_resolution_var, width=10).grid(row=1, column=1, sticky=tk.W, padx=5)
-        ttk.Label(bake_frame, text="pixels (higher = more detail)", foreground="gray", font=("TkDefaultFont", 8)).grid(row=1, column=2, sticky=tk.W, padx=5)
-        
-        # Bake button and status
-        self.bake_button = ttk.Button(bake_frame, text="Bake Edge Map", 
-                                      command=self.bake_edge_maps, state="disabled")
-        self.bake_button.grid(row=2, column=0, columnspan=2, sticky=tk.W, padx=5, pady=(10, 5))
-        
-        self.bake_status_label = ttk.Label(bake_frame, text="No baked map found", 
-                                          foreground="gray", font=("TkDefaultFont", 8))
-        self.bake_status_label.grid(row=3, column=0, columnspan=3, sticky=tk.W, padx=5, pady=(0, 5))
         
         # Store references for enable/disable
         self.surface_widgets = {
             'scales': [
                 self.curv_strength_scale, self.edge_highlight_scale, self.crevice_darken_scale,
-                self.edge_sat_scale
-            ],
-            'canvases': [self.edge_color_canvas, self.crevice_color_canvas],
-            'buttons': [self.bake_button]
+                self.edge_hue_scale, self.crevice_hue_scale, self.edge_sat_scale
+            ]
         }
-        
-        # Check for existing baked map on project load
-        self.check_baked_map_status()
     
     def setup_pixel_tab(self, parent):
         """Setup Pixelate tab"""
@@ -526,8 +474,14 @@ class PixelatorGUI:
     def update_crevice_darken_label(self, *args):
         self.crevice_darken_label.config(text=f"{self.crevice_darken_var.get():.2f}")
     
+    def update_edge_hue_label(self, *args):
+        self.edge_hue_label.config(text=f"{self.edge_hue_shift_var.get():.0f}°")
+    
+    def update_crevice_hue_label(self, *args):
+        self.crevice_hue_label.config(text=f"{self.crevice_hue_shift_var.get():.0f}°")
+    
     def update_edge_sat_label(self, *args):
-        self.edge_sat_label.config(text=f"{self.edge_saturation_var.get():.2f}")
+        self.edge_sat_label.config(text=f"{self.edge_sat_var.get():.2f}")
     
     def on_surface_toggle(self):
         """Enable/disable surface effect controls based on checkbox"""
@@ -540,15 +494,6 @@ class PixelatorGUI:
         
         for scale in self.surface_widgets['scales']:
             scale.config(state=state)
-        
-        for canvas in self.surface_widgets['canvases']:
-            if enabled:
-                canvas.config(cursor="hand2")
-            else:
-                canvas.config(cursor="")
-        
-        for button in self.surface_widgets['buttons']:
-            button.config(state=btn_state)
     
     def browse_model_file(self):
         filename = filedialog.askopenfilename(
@@ -635,7 +580,7 @@ class PixelatorGUI:
     
     def get_settings(self):
         """Get current settings as dictionary"""
-        settings = {
+        return {
             'blur_amount': self.blur_amount_var.get(),
             'noise_amount': self.noise_amount_var.get(),
             'color_variation': self.color_var_var.get(),
@@ -644,9 +589,9 @@ class PixelatorGUI:
             'curvature_strength': self.curv_strength_var.get(),
             'edge_highlight': self.edge_highlight_var.get(),
             'crevice_darken': self.crevice_darken_var.get(),
-            'edge_color': self.hex_to_rgb(self.edge_color_var),
-            'crevice_color': self.hex_to_rgb(self.crevice_color_var),
-            'edge_saturation': self.edge_saturation_var.get(),
+            'edge_hue_shift': self.edge_hue_shift_var.get(),
+            'crevice_hue_shift': self.crevice_hue_shift_var.get(),
+            'edge_saturation': self.edge_sat_var.get(),
             'pixel_width': self.pixel_width_var.get(),
             'resample_mode': self.resample_var.get(),
             'quantize_method': self.quantize_method_var.get(),
@@ -657,15 +602,6 @@ class PixelatorGUI:
             'dither_strength': self.dither_strength_var.get(),
             'is_normal_map': self.is_normal_map_var.get()
         }
-        
-        # Add baked map path if project is saved and map exists
-        if self.current_project_path:
-            project_dir = os.path.dirname(self.current_project_path)
-            baked_map_path = os.path.join(project_dir, "edge.png")
-            if os.path.exists(baked_map_path):
-                settings['baked_map_path'] = baked_map_path
-        
-        return settings
     
     def get_batch_settings(self):
         """Get settings for batch processing (includes add_suffix)"""
@@ -853,310 +789,6 @@ class PixelatorGUI:
             self.show_success(message)
         else:
             self.show_error(f"Batch failed: {results['failed']}/{results['total']} files failed to process")
-    
-    # === PROJECT MANAGEMENT ===
-    
-    def create_scrollable_tab(self):
-        """Create a scrollable canvas container for a tab"""
-        # Container frame
-        container = ttk.Frame(self.notebook)
-        
-        # Canvas with scrollbar
-        canvas = tk.Canvas(container, highlightthickness=0)
-        scrollbar = ttk.Scrollbar(container, orient="vertical", command=canvas.yview)
-        scrollable_frame = ttk.Frame(canvas, padding="10")
-        
-        # Update scroll region only after idle to reduce lag
-        def update_scrollregion():
-            canvas.update_idletasks()
-            canvas.configure(scrollregion=canvas.bbox("all"))
-        
-        scrollable_frame.bind("<Configure>", lambda e: canvas.after_idle(update_scrollregion))
-        
-        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
-        canvas.configure(yscrollcommand=scrollbar.set)
-        
-        # Pack canvas and scrollbar
-        canvas.pack(side="left", fill="both", expand=True)
-        scrollbar.pack(side="right", fill="y")
-        
-        # Bind mousewheel only when mouse enters this canvas (not bind_all)
-        def on_enter(event):
-            def on_mousewheel(e):
-                canvas.yview_scroll(int(-1 * (e.delta / 120)), "units")
-            canvas.bind("<MouseWheel>", on_mousewheel)
-        
-        def on_leave(event):
-            canvas.unbind("<MouseWheel>")
-        
-        canvas.bind("<Enter>", on_enter)
-        canvas.bind("<Leave>", on_leave)
-        
-        return container, scrollable_frame
-    
-    def setup_menu(self):
-        """Create menu bar"""
-        menubar = tk.Menu(self.root)
-        self.root.config(menu=menubar)
-        
-        # File menu
-        file_menu = tk.Menu(menubar, tearoff=0)
-        menubar.add_cascade(label="File", menu=file_menu)
-        
-        file_menu.add_command(label="New Project", command=self.new_project, accelerator="Cmd+N")
-        file_menu.add_separator()
-        file_menu.add_command(label="Open Project...", command=self.load_project, accelerator="Cmd+O")
-        file_menu.add_separator()
-        file_menu.add_command(label="Save Project", command=self.save_project, accelerator="Cmd+S")
-        file_menu.add_command(label="Save Project As...", command=self.save_project_as, accelerator="Cmd+Shift+S")
-        file_menu.add_separator()
-        file_menu.add_command(label="Quit", command=self.root.quit, accelerator="Cmd+Q")
-        
-        # Keyboard shortcuts
-        self.root.bind('<Command-n>', lambda e: self.new_project())
-        self.root.bind('<Command-o>', lambda e: self.load_project())
-        self.root.bind('<Command-s>', lambda e: self.save_project())
-        self.root.bind('<Command-Shift-s>', lambda e: self.save_project_as())
-        self.root.bind('<Command-q>', lambda e: self.root.quit())
-    
-    def new_project(self):
-        """Create a new project (reset all settings)"""
-        if self.project_modified:
-            result = messagebox.askyesnocancel("Unsaved Changes", 
-                                              "Save current project before creating new?")
-            if result is None:  # Cancel
-                return
-            elif result:  # Yes
-                if not self.save_project():
-                    return
-        
-        # Reset all settings to defaults
-        self.input_file_var.set('')
-        self.input_folder_var.set('')
-        self.output_var.set('')
-        self.blur_amount_var.set(0.0)
-        self.noise_amount_var.set(0.0)
-        self.color_var_var.set(0.0)
-        self.enable_surface_var.set(False)
-        self.model_path_var.set('')
-        self.curv_strength_var.set(5.0)
-        self.edge_highlight_var.set(0.3)
-        self.crevice_darken_var.set(0.4)
-        self.edge_color_var = '#FF8800'
-        self.crevice_color_var = '#331100'
-        self.edge_saturation_var.set(0.2)
-        self.pixel_width_var.set(64)
-        self.resample_var.set('nearest')
-        self.quantize_method_var.set('bit_depth')
-        self.bits_per_channel_var.set(5)
-        self.palette_colors_var.set(32)
-        self.dither_mode_var.set('bayer')
-        self.bayer_size_var.set('4x4')
-        self.dither_strength_var.set(0.5)
-        
-        self.current_project_path = None
-        self.project_modified = False
-        self.update_title()
-        self.on_surface_toggle()
-        self.update_edge_color_button()
-        self.update_crevice_color_button()
-    
-    def save_project(self):
-        """Save current project (use existing path or prompt)"""
-        if self.current_project_path:
-            settings = self.project_manager.get_current_settings(self)
-            if self.project_manager.save_project(self.current_project_path, settings):
-                self.project_modified = False
-                self.update_title()
-                self.check_baked_map_status()
-                self.show_success(f"Project saved: {os.path.basename(self.current_project_path)}")
-                return True
-            else:
-                self.show_error("Failed to save project")
-                return False
-        else:
-            return self.save_project_as()
-    
-    def save_project_as(self):
-        """Save project with new filename in folder structure"""
-        project_name = simpledialog.askstring("Project Name", 
-                                              "Enter project name:",
-                                              initialvalue="MyProject")
-        if not project_name:
-            return False
-        
-        # Ask for parent directory
-        parent_dir = filedialog.askdirectory(title="Select Location for Project Folder")
-        if not parent_dir:
-            return False
-        
-        # Create project folder
-        project_folder = os.path.join(parent_dir, project_name)
-        try:
-            os.makedirs(project_folder, exist_ok=True)
-        except Exception as e:
-            self.show_error(f"Failed to create project folder: {e}")
-            return False
-        
-        # Save project file inside folder
-        filepath = os.path.join(project_folder, f"{project_name}.pixproj")
-        
-        settings = self.project_manager.get_current_settings(self)
-        if self.project_manager.save_project(filepath, settings):
-            self.current_project_path = filepath
-            self.project_modified = False
-            self.update_title()
-            self.check_baked_map_status()
-            self.show_success(f"Project saved in folder: {project_name}")
-            return True
-        else:
-            self.show_error("Failed to save project")
-            return False
-    
-    def load_project(self):
-        """Load project from file"""
-        if self.project_modified:
-            result = messagebox.askyesnocancel("Unsaved Changes", 
-                                              "Save current project before loading?")
-            if result is None:  # Cancel
-                return
-            elif result:  # Yes
-                if not self.save_project():
-                    return
-        
-        filepath = filedialog.askopenfilename(
-            title="Open Project",
-            filetypes=[("Pixelator Project", "*.pixproj"), ("All Files", "*.*")]
-        )
-        
-        if filepath:
-            settings = self.project_manager.load_project(filepath)
-            if settings:
-                if self.project_manager.apply_settings_to_gui(self, settings):
-                    self.current_project_path = filepath
-                    self.project_modified = False
-                    self.update_title()
-                    self.check_baked_map_status()
-                    self.show_success(f"Project loaded: {os.path.basename(filepath)}")
-                else:
-                    self.show_error("Failed to apply project settings")
-            else:
-                self.show_error("Failed to load project file")
-    
-    def update_title(self):
-        """Update window title with project name and modified status"""
-        title = "Texture Pixelator"
-        if self.current_project_path:
-            title += f" - {os.path.basename(self.current_project_path)}"
-        if self.project_modified:
-            title += " *"
-        self.root.title(title)
-    
-    def mark_modified(self, *args):
-        """Mark project as modified"""
-        self.project_modified = True
-        self.update_title()
-    
-    def pick_edge_color(self):
-        """Open color picker for edge color"""
-        color = colorchooser.askcolor(
-            title="Choose Edge Color",
-            initialcolor=self.edge_color_var
-        )
-        if color[1]:  # color[1] is the hex string
-            self.edge_color_var = color[1]
-            self.edge_color_canvas.itemconfig(self.edge_color_circle, fill=color[1])
-            self.mark_modified()
-    
-    def pick_crevice_color(self):
-        """Open color picker for crevice color"""
-        color = colorchooser.askcolor(
-            title="Choose Crevice Color",
-            initialcolor=self.crevice_color_var
-        )
-        if color[1]:  # color[1] is the hex string
-            self.crevice_color_var = color[1]
-            self.crevice_color_canvas.itemconfig(self.crevice_color_circle, fill=color[1])
-            self.mark_modified()
-    
-    def hex_to_rgb(self, hex_color):
-        """Convert hex color to RGB tuple"""
-        hex_color = hex_color.lstrip('#')
-        return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
-    
-    def center_placeholder_text(self):
-        """Center the placeholder text in the canvas"""
-        if self.preview_text_id and not self.preview_image:
-            canvas_width = self.preview_canvas.winfo_width()
-            canvas_height = self.preview_canvas.winfo_height()
-            if canvas_width > 1 and canvas_height > 1:  # Canvas is rendered
-                self.preview_canvas.coords(self.preview_text_id, canvas_width // 2, canvas_height // 2)
-    
-    def check_baked_map_status(self):
-        """Check if baked edge map exists and update UI"""
-        if not self.current_project_path:
-            self.bake_status_label.config(text="Save project to enable baking", foreground="gray")
-            return
-        
-        project_dir = os.path.dirname(self.current_project_path)
-        baked_map_path = os.path.join(project_dir, "edge.png")
-        
-        if os.path.exists(baked_map_path):
-            # Get file size for display
-            size_bytes = os.path.getsize(baked_map_path)
-            size_mb = size_bytes / (1024 * 1024)
-            self.bake_status_label.config(
-                text=f"✓ Edge map found: edge.png ({size_mb:.1f} MB)",
-                foreground="green"
-            )
-        else:
-            self.bake_status_label.config(
-                text="No edge map found - click above to generate",
-                foreground="orange"
-            )
-    
-    def bake_edge_maps(self):
-        """Bake edge map from 3D model"""
-        # Check if project is saved
-        if not self.current_project_path:
-            result = messagebox.askyesno("Save Project First", 
-                                        "Baked maps are saved in your project folder.\n\n"
-                                        "Would you like to save your project now?")
-            if result:
-                if not self.save_project_as():
-                    return
-            else:
-                return
-        
-        model_path = self.model_path_var.get()
-        if not model_path or not os.path.exists(model_path):
-            self.show_error("Please select a valid 3D model file first")
-            return
-        
-        # Output path in project folder
-        project_dir = os.path.dirname(self.current_project_path)
-        output_path = os.path.join(project_dir, "edge.png")
-        
-        # Get resolution from UI
-        resolution = self.bake_resolution_var.get()
-        
-        self.status_var.set("Baking edge map...")
-        self.root.update()
-        
-        # Bake the edge map
-        strength = self.curv_strength_var.get()
-        success = self.pixelator.surface_baker.bake_curvature_map(
-            model_path, output_path, resolution, strength
-        )
-        
-        self.status_var.set("Ready")
-        
-        if success:
-            self.check_baked_map_status()
-            self.show_success(f"Edge map saved to project folder\n"
-                            f"It will be automatically used for faster processing.")
-        else:
-            self.show_error("Failed to bake edge map")
 
 
 def main():

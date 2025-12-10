@@ -227,9 +227,10 @@ class TexturePixelator:
                        curvature_strength: float = 0.5,
                        edge_highlight: float = 0.3,
                        crevice_darken: float = 0.4,
-                       edge_hue_shift: float = 30.0,
-                       crevice_hue_shift: float = -30.0,
+                       edge_color: tuple = (255, 136, 0),
+                       crevice_color: tuple = (51, 17, 0),
                        edge_saturation: float = 0.2,
+                       baked_map_path: str = None,
                        pixel_width: int = 16,
                        resample_mode: str = 'nearest',
                        quantize_method: str = 'bit_depth',
@@ -273,17 +274,16 @@ class TexturePixelator:
             else:
                 image = image.convert('RGB')
             
-            # Phase 1: Preprocessing
+            # Phase 1: Surface Effects (apply BEFORE preprocessing so blur affects edges too)
+            if enable_surface and baked_map_path:
+                print("Applying surface effects from baked edge map...")
+                image = self.surface_baker.apply_surface_effects_to_texture(
+                    image, edge_highlight, edge_color, baked_map_path
+                )
+            
+            # Phase 2: Preprocessing
             if blur_amount > 0 or noise_amount > 0 or color_variation > 0:
                 image = self.preprocess_image(image, blur_amount, noise_amount, color_variation)
-            
-            # Phase 2: Surface Effects (Curvature-based)
-            if enable_surface and model_path:
-                print("Applying surface effects from 3D model...")
-                image = self.surface_baker.apply_surface_effects_to_texture(
-                    image, model_path, curvature_strength, edge_highlight,
-                    crevice_darken, edge_hue_shift, crevice_hue_shift, edge_saturation
-                )
             
             # Phase 3: Pixelation
             # Step 1: Downsample
