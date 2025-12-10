@@ -45,15 +45,18 @@ class PixelatorGUI:
         # Create tab frames
         file_tab = ttk.Frame(self.notebook, padding="10")
         prep_tab = ttk.Frame(self.notebook, padding="10")
+        ao_tab = ttk.Frame(self.notebook, padding="10")
         pixel_tab = ttk.Frame(self.notebook, padding="10")
         
         self.notebook.add(file_tab, text="1. Files")
         self.notebook.add(prep_tab, text="2. Pre-Process")
-        self.notebook.add(pixel_tab, text="3. Pixelate")
+        self.notebook.add(ao_tab, text="3. Surface Effects")
+        self.notebook.add(pixel_tab, text="4. Pixelate")
         
         # Build each tab
         self.setup_file_tab(file_tab)
         self.setup_prep_tab(prep_tab)
+        self.setup_surface_tab(ao_tab)
         self.setup_pixel_tab(pixel_tab)
         
         # Right panel for preview
@@ -226,6 +229,135 @@ class PixelatorGUI:
         ttk.Label(prep_frame, text="Randomly shifts hue/saturation slightly", 
                  foreground="gray", font=("TkDefaultFont", 8)).grid(row=6, column=1, sticky=tk.W, padx=5)
     
+    def setup_surface_tab(self, parent):
+        """Setup Surface Effects tab (curvature + AO)"""
+        # === SURFACE EFFECTS ENABLE/DISABLE ===
+        enable_frame = ttk.LabelFrame(parent, text="Surface-Based Effects", padding="10")
+        enable_frame.grid(row=0, column=0, sticky=(tk.W, tk.E), pady=(0, 10))
+        
+        self.enable_surface_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(enable_frame, text="Enable Surface Effects (requires 3D model)", 
+                       variable=self.enable_surface_var, command=self.on_surface_toggle).grid(row=0, column=0, columnspan=3, sticky=tk.W, pady=5)
+        
+        ttk.Label(enable_frame, text="Add highlights to edges/ridges, darken crevices based on 3D mesh", 
+                 foreground="gray", font=("TkDefaultFont", 9, "italic")).grid(row=1, column=0, columnspan=3, sticky=tk.W, pady=(0, 10))
+        
+        # === 3D MODEL INPUT ===
+        model_frame = ttk.LabelFrame(parent, text="3D Model", padding="10")
+        model_frame.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=(0, 10))
+        
+        ttk.Label(model_frame, text="Model File:").grid(row=0, column=0, sticky=tk.W, pady=5)
+        self.model_path_var = tk.StringVar()
+        model_entry = ttk.Entry(model_frame, textvariable=self.model_path_var, width=35, state="disabled")
+        model_entry.grid(row=0, column=1, sticky=(tk.W, tk.E), padx=5)
+        self.model_browse_btn = ttk.Button(model_frame, text="Browse...", command=self.browse_model_file, state="disabled")
+        self.model_browse_btn.grid(row=0, column=2, padx=5)
+        
+        ttk.Label(model_frame, text="Supports: OBJ, FBX, glTF/GLB", 
+                 foreground="gray", font=("TkDefaultFont", 8)).grid(row=1, column=1, sticky=tk.W, padx=5)
+        
+        self.model_entry = model_entry  # Store reference for enable/disable
+        
+        # === CURVATURE SETTINGS ===
+        curv_frame = ttk.LabelFrame(parent, text="Curvature Detection", padding="10")
+        curv_frame.grid(row=2, column=0, sticky=(tk.W, tk.E), pady=(0, 10))
+        
+        ttk.Label(curv_frame, text="Detect edges, ridges, and sharp features", 
+                 foreground="gray", font=("TkDefaultFont", 9, "italic")).grid(row=0, column=0, columnspan=3, sticky=tk.W, pady=(0, 10))
+        
+        # Curvature Strength
+        ttk.Label(curv_frame, text="Detection Strength:").grid(row=1, column=0, sticky=tk.W, pady=5)
+        self.curv_strength_var = tk.DoubleVar(value=5.0)
+        self.curv_strength_scale = ttk.Scale(curv_frame, from_=0.1, to=20.0, 
+                                            variable=self.curv_strength_var, orient=tk.HORIZONTAL, 
+                                            length=200, state="disabled")
+        self.curv_strength_scale.grid(row=1, column=1, sticky=tk.W, padx=5)
+        self.curv_strength_label = ttk.Label(curv_frame, text="0.50")
+        self.curv_strength_label.grid(row=1, column=2, sticky=tk.W)
+        self.curv_strength_var.trace_add('write', self.update_curv_strength_label)
+        ttk.Label(curv_frame, text="How sensitive to surface curvature changes", 
+                 foreground="gray", font=("TkDefaultFont", 8)).grid(row=2, column=1, sticky=tk.W, padx=5)
+        
+        # Edge Highlight
+        ttk.Label(curv_frame, text="Edge Highlight:").grid(row=3, column=0, sticky=tk.W, pady=5)
+        self.edge_highlight_var = tk.DoubleVar(value=0.3)
+        self.edge_highlight_scale = ttk.Scale(curv_frame, from_=0.0, to=1.0, 
+                                             variable=self.edge_highlight_var, orient=tk.HORIZONTAL, 
+                                             length=200, state="disabled")
+        self.edge_highlight_scale.grid(row=3, column=1, sticky=tk.W, padx=5)
+        self.edge_highlight_label = ttk.Label(curv_frame, text="0.30")
+        self.edge_highlight_label.grid(row=3, column=2, sticky=tk.W)
+        self.edge_highlight_var.trace_add('write', self.update_edge_highlight_label)
+        ttk.Label(curv_frame, text="Brighten convex edges/ridges (0 = none, 1 = white)", 
+                 foreground="gray", font=("TkDefaultFont", 8)).grid(row=4, column=1, sticky=tk.W, padx=5)
+        
+        # Crevice Darken
+        ttk.Label(curv_frame, text="Crevice Darken:").grid(row=5, column=0, sticky=tk.W, pady=5)
+        self.crevice_darken_var = tk.DoubleVar(value=0.4)
+        self.crevice_darken_scale = ttk.Scale(curv_frame, from_=0.0, to=1.0, 
+                                             variable=self.crevice_darken_var, orient=tk.HORIZONTAL, 
+                                             length=200, state="disabled")
+        self.crevice_darken_scale.grid(row=5, column=1, sticky=tk.W, padx=5)
+        self.crevice_darken_label = ttk.Label(curv_frame, text="0.40")
+        self.crevice_darken_label.grid(row=5, column=2, sticky=tk.W)
+        self.crevice_darken_var.trace_add('write', self.update_crevice_darken_label)
+        ttk.Label(curv_frame, text="Darken concave areas/crevices (0 = none, 1 = black)", 
+                 foreground="gray", font=("TkDefaultFont", 8)).grid(row=6, column=1, sticky=tk.W, padx=5)
+        
+        # === COLOR TINTING ===
+        tint_frame = ttk.LabelFrame(parent, text="Edge/Crevice Color Tinting", padding="10")
+        tint_frame.grid(row=3, column=0, sticky=(tk.W, tk.E), pady=(0, 10))
+        
+        ttk.Label(tint_frame, text="Shift colors on edges and in crevices", 
+                 foreground="gray", font=("TkDefaultFont", 9, "italic")).grid(row=0, column=0, columnspan=3, sticky=tk.W, pady=(0, 10))
+        
+        # Edge Hue shift
+        ttk.Label(tint_frame, text="Edge Hue Shift:").grid(row=1, column=0, sticky=tk.W, pady=5)
+        self.edge_hue_shift_var = tk.DoubleVar(value=30.0)
+        self.edge_hue_scale = ttk.Scale(tint_frame, from_=-180, to=180, 
+                                       variable=self.edge_hue_shift_var, orient=tk.HORIZONTAL, 
+                                       length=200, state="disabled")
+        self.edge_hue_scale.grid(row=1, column=1, sticky=tk.W, padx=5)
+        self.edge_hue_label = ttk.Label(tint_frame, text="30°")
+        self.edge_hue_label.grid(row=1, column=2, sticky=tk.W)
+        self.edge_hue_shift_var.trace_add('write', self.update_edge_hue_label)
+        ttk.Label(tint_frame, text="Hue shift on edges (e.g., +30° = warmer highlights)", 
+                 foreground="gray", font=("TkDefaultFont", 8)).grid(row=2, column=1, sticky=tk.W, padx=5)
+        
+        # Crevice Hue shift
+        ttk.Label(tint_frame, text="Crevice Hue Shift:").grid(row=3, column=0, sticky=tk.W, pady=5)
+        self.crevice_hue_shift_var = tk.DoubleVar(value=-30.0)
+        self.crevice_hue_scale = ttk.Scale(tint_frame, from_=-180, to=180, 
+                                          variable=self.crevice_hue_shift_var, orient=tk.HORIZONTAL, 
+                                          length=200, state="disabled")
+        self.crevice_hue_scale.grid(row=3, column=1, sticky=tk.W, padx=5)
+        self.crevice_hue_label = ttk.Label(tint_frame, text="-30°")
+        self.crevice_hue_label.grid(row=3, column=2, sticky=tk.W)
+        self.crevice_hue_shift_var.trace_add('write', self.update_crevice_hue_label)
+        ttk.Label(tint_frame, text="Hue shift in crevices (e.g., -30° = cooler shadows)", 
+                 foreground="gray", font=("TkDefaultFont", 8)).grid(row=4, column=1, sticky=tk.W, padx=5)
+        
+        # Saturation boost
+        ttk.Label(tint_frame, text="Edge Saturation:").grid(row=5, column=0, sticky=tk.W, pady=5)
+        self.edge_sat_var = tk.DoubleVar(value=0.2)
+        self.edge_sat_scale = ttk.Scale(tint_frame, from_=-1.0, to=1.0, 
+                                       variable=self.edge_sat_var, orient=tk.HORIZONTAL, 
+                                       length=200, state="disabled")
+        self.edge_sat_scale.grid(row=5, column=1, sticky=tk.W, padx=5)
+        self.edge_sat_label = ttk.Label(tint_frame, text="0.20")
+        self.edge_sat_label.grid(row=5, column=2, sticky=tk.W)
+        self.edge_sat_var.trace_add('write', self.update_edge_sat_label)
+        ttk.Label(tint_frame, text="Saturation change on edges (-1 = gray, +1 = vibrant)", 
+                 foreground="gray", font=("TkDefaultFont", 8)).grid(row=6, column=1, sticky=tk.W, padx=5)
+        
+        # Store references for enable/disable
+        self.surface_widgets = {
+            'scales': [
+                self.curv_strength_scale, self.edge_highlight_scale, self.crevice_darken_scale,
+                self.edge_hue_scale, self.crevice_hue_scale, self.edge_sat_scale
+            ]
+        }
+    
     def setup_pixel_tab(self, parent):
         """Setup Pixelate tab"""
         
@@ -333,6 +465,50 @@ class PixelatorGUI:
     def update_color_var_label(self, *args):
         self.color_var_label.config(text=f"{self.color_var_var.get():.1f}")
     
+    def update_curv_strength_label(self, *args):
+        self.curv_strength_label.config(text=f"{self.curv_strength_var.get():.2f}")
+    
+    def update_edge_highlight_label(self, *args):
+        self.edge_highlight_label.config(text=f"{self.edge_highlight_var.get():.2f}")
+    
+    def update_crevice_darken_label(self, *args):
+        self.crevice_darken_label.config(text=f"{self.crevice_darken_var.get():.2f}")
+    
+    def update_edge_hue_label(self, *args):
+        self.edge_hue_label.config(text=f"{self.edge_hue_shift_var.get():.0f}°")
+    
+    def update_crevice_hue_label(self, *args):
+        self.crevice_hue_label.config(text=f"{self.crevice_hue_shift_var.get():.0f}°")
+    
+    def update_edge_sat_label(self, *args):
+        self.edge_sat_label.config(text=f"{self.edge_sat_var.get():.2f}")
+    
+    def on_surface_toggle(self):
+        """Enable/disable surface effect controls based on checkbox"""
+        enabled = self.enable_surface_var.get()
+        state = "normal" if enabled else "disabled"
+        btn_state = "normal" if enabled else "disabled"
+        
+        self.model_entry.config(state=state)
+        self.model_browse_btn.config(state=btn_state)
+        
+        for scale in self.surface_widgets['scales']:
+            scale.config(state=state)
+    
+    def browse_model_file(self):
+        filename = filedialog.askopenfilename(
+            title="Select 3D Model",
+            filetypes=[
+                ("3D Models", "*.obj *.fbx *.gltf *.glb"),
+                ("Wavefront OBJ", "*.obj"),
+                ("Autodesk FBX", "*.fbx"),
+                ("glTF", "*.gltf *.glb"),
+                ("All Files", "*.*")
+            ]
+        )
+        if filename:
+            self.model_path_var.set(filename)
+    
     def browse_input_file(self):
         filename = filedialog.askopenfilename(
             title="Select Input Texture",
@@ -408,6 +584,14 @@ class PixelatorGUI:
             'blur_amount': self.blur_amount_var.get(),
             'noise_amount': self.noise_amount_var.get(),
             'color_variation': self.color_var_var.get(),
+            'enable_surface': self.enable_surface_var.get(),
+            'model_path': self.model_path_var.get() if self.enable_surface_var.get() else None,
+            'curvature_strength': self.curv_strength_var.get(),
+            'edge_highlight': self.edge_highlight_var.get(),
+            'crevice_darken': self.crevice_darken_var.get(),
+            'edge_hue_shift': self.edge_hue_shift_var.get(),
+            'crevice_hue_shift': self.crevice_hue_shift_var.get(),
+            'edge_saturation': self.edge_sat_var.get(),
             'pixel_width': self.pixel_width_var.get(),
             'resample_mode': self.resample_var.get(),
             'quantize_method': self.quantize_method_var.get(),

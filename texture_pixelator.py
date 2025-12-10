@@ -6,6 +6,7 @@ from PIL import Image, ImageFilter
 from typing import Tuple, Optional, List
 import os
 import random
+from ao_baker import SurfaceEffectsBaker
 
 
 class TexturePixelator:
@@ -41,6 +42,7 @@ class TexturePixelator:
             '4x4': self.BAYER_4X4,
             '8x8': self.BAYER_8X8
         }
+        self.surface_baker = SurfaceEffectsBaker()
     
     def preprocess_image(self, img: Image.Image, blur_amount: float = 0.0, 
                         noise_amount: float = 0.0, color_variation: float = 0.0) -> Image.Image:
@@ -220,6 +222,14 @@ class TexturePixelator:
                        blur_amount: float = 0.0,
                        noise_amount: float = 0.0,
                        color_variation: float = 0.0,
+                       enable_surface: bool = False,
+                       model_path: str = None,
+                       curvature_strength: float = 0.5,
+                       edge_highlight: float = 0.3,
+                       crevice_darken: float = 0.4,
+                       edge_hue_shift: float = 30.0,
+                       crevice_hue_shift: float = -30.0,
+                       edge_saturation: float = 0.2,
                        pixel_width: int = 16,
                        resample_mode: str = 'nearest',
                        quantize_method: str = 'bit_depth',
@@ -267,7 +277,15 @@ class TexturePixelator:
             if blur_amount > 0 or noise_amount > 0 or color_variation > 0:
                 image = self.preprocess_image(image, blur_amount, noise_amount, color_variation)
             
-            # Phase 2: Pixelation
+            # Phase 2: Surface Effects (Curvature-based)
+            if enable_surface and model_path:
+                print("Applying surface effects from 3D model...")
+                image = self.surface_baker.apply_surface_effects_to_texture(
+                    image, model_path, curvature_strength, edge_highlight,
+                    crevice_darken, edge_hue_shift, crevice_hue_shift, edge_saturation
+                )
+            
+            # Phase 3: Pixelation
             # Step 1: Downsample
             image = self.downsample_image(image, pixel_width, resample_mode)
             # Phase 2: Pixelation
