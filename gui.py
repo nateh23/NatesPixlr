@@ -7,7 +7,7 @@ import os
 from pathlib import Path
 from texture_pixelator import TexturePixelator
 from batch_process import BatchProcessor
-from PIL import Image, ImageTk
+from PIL import Image, ImageTk, ImageFilter
 
 
 class PixelatorGUI:
@@ -37,6 +37,24 @@ class PixelatorGUI:
         # Left panel for controls
         main_frame = ttk.Frame(container)
         main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), padx=(0, 10))
+        
+        # Pipeline tabs
+        self.notebook = ttk.Notebook(main_frame)
+        self.notebook.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(0, 10))
+        
+        # Create tab frames
+        file_tab = ttk.Frame(self.notebook, padding="10")
+        prep_tab = ttk.Frame(self.notebook, padding="10")
+        pixel_tab = ttk.Frame(self.notebook, padding="10")
+        
+        self.notebook.add(file_tab, text="1. Files")
+        self.notebook.add(prep_tab, text="2. Pre-Process")
+        self.notebook.add(pixel_tab, text="3. Pixelate")
+        
+        # Build each tab
+        self.setup_file_tab(file_tab)
+        self.setup_prep_tab(prep_tab)
+        self.setup_pixel_tab(pixel_tab)
         
         # Right panel for preview
         preview_frame = ttk.LabelFrame(container, text="Preview", padding="10")
@@ -78,15 +96,57 @@ class PixelatorGUI:
         
         # Preview placeholder text
         self.preview_text_id = self.preview_canvas.create_text(
-            200, 350, 
+            200, 320, 
             text="No preview yet\n\nProcess a file to see preview", 
             fill='#888', 
             font=("TkDefaultFont", 11),
             justify=tk.CENTER
         )
         
+        # Process buttons at bottom of main frame
+        button_frame = ttk.Frame(main_frame)
+        button_frame.grid(row=1, column=0, pady=10)
+        
+        ttk.Button(button_frame, text="Process Single File", 
+                  command=self.process_single, width=20).grid(row=0, column=0, padx=5)
+        ttk.Button(button_frame, text="Process Batch", 
+                  command=self.process_batch, width=20).grid(row=0, column=1, padx=5)
+        
+        # Status messages
+        status_frame = ttk.Frame(main_frame)
+        status_frame.grid(row=2, column=0, sticky=(tk.W, tk.E))
+        
+        self.status_var = tk.StringVar(value="Ready")
+        status_label = ttk.Label(status_frame, textvariable=self.status_var, relief=tk.SUNKEN, anchor=tk.W)
+        status_label.pack(fill=tk.X, expand=True)
+        
+        # Success message area
+        self.success_frame = ttk.Frame(main_frame)
+        self.success_frame.grid(row=3, column=0, sticky=(tk.W, tk.E), pady=(5, 0))
+        self.success_label = ttk.Label(self.success_frame, text="", foreground="green", wraplength=500, justify=tk.LEFT)
+        self.success_label.pack(fill=tk.X)
+        
+        # Error message area
+        self.error_frame = ttk.Frame(main_frame)
+        self.error_frame.grid(row=4, column=0, sticky=(tk.W, tk.E), pady=(5, 0))
+        self.error_label = ttk.Label(self.error_frame, text="", foreground="red", wraplength=500, justify=tk.LEFT)
+        self.error_label.pack(fill=tk.X)
+        
+        # Configure grid weights
+        container.columnconfigure(0, weight=1)
+        container.columnconfigure(1, weight=2)
+        container.rowconfigure(0, weight=1)
+        self.root.columnconfigure(0, weight=1)
+        self.root.rowconfigure(0, weight=1)
+        
+        # Initialize UI state AFTER all widgets are created
+        self.on_quantize_method_change()
+        self.on_dither_mode_change()
+    
+    def setup_file_tab(self, parent):
+        """Setup Files tab"""
         # === FILE SELECTION ===
-        file_frame = ttk.LabelFrame(main_frame, text="File Selection", padding="10")
+        file_frame = ttk.LabelFrame(parent, text="File Selection", padding="10")
         file_frame.grid(row=0, column=0, sticky=(tk.W, tk.E), pady=(0, 10))
         
         # Help text
@@ -120,9 +180,57 @@ class PixelatorGUI:
         ttk.Button(file_frame, text="Browse", command=self.browse_output).grid(row=5, column=2)
         ttk.Label(file_frame, text="Where to save: file path (single) or folder (batch)", 
                  foreground="gray", font=("TkDefaultFont", 8)).grid(row=6, column=1, sticky=tk.W, padx=5)
+    
+    def setup_prep_tab(self, parent):
+        """Setup Pre-Process tab"""
+        # === PRE-PROCESSING ===
+        prep_frame = ttk.LabelFrame(parent, text="Pre-Processing (Phase 1)", padding="10")
+        prep_frame.grid(row=0, column=0, sticky=(tk.W, tk.E), pady=(0, 10))
+        
+        ttk.Label(prep_frame, text="Add complexity to solid colors before pixelation", 
+                 foreground="gray", font=("TkDefaultFont", 9, "italic")).grid(row=0, column=0, columnspan=3, sticky=tk.W, pady=(0, 10))
+        
+        # Blur amount
+        ttk.Label(prep_frame, text="Blur Amount:").grid(row=1, column=0, sticky=tk.W, pady=5)
+        self.blur_amount_var = tk.DoubleVar(value=0.0)
+        blur_scale = ttk.Scale(prep_frame, from_=0.0, to=5.0, variable=self.blur_amount_var, 
+                              orient=tk.HORIZONTAL, length=200)
+        blur_scale.grid(row=1, column=1, sticky=tk.W, padx=5)
+        self.blur_label = ttk.Label(prep_frame, text="0.0")
+        self.blur_label.grid(row=1, column=2, sticky=tk.W)
+        self.blur_amount_var.trace_add('write', self.update_blur_label)
+        ttk.Label(prep_frame, text="Softens edges, creates subtle gradients", 
+                 foreground="gray", font=("TkDefaultFont", 8)).grid(row=2, column=1, sticky=tk.W, padx=5)
+        
+        # Noise amount
+        ttk.Label(prep_frame, text="Noise Amount:").grid(row=3, column=0, sticky=tk.W, pady=5)
+        self.noise_amount_var = tk.DoubleVar(value=0.0)
+        noise_scale = ttk.Scale(prep_frame, from_=0.0, to=50.0, variable=self.noise_amount_var, 
+                               orient=tk.HORIZONTAL, length=200)
+        noise_scale.grid(row=3, column=1, sticky=tk.W, padx=5)
+        self.noise_label = ttk.Label(prep_frame, text="0.0")
+        self.noise_label.grid(row=3, column=2, sticky=tk.W)
+        self.noise_amount_var.trace_add('write', self.update_noise_label)
+        ttk.Label(prep_frame, text="Adds grain/texture variation", 
+                 foreground="gray", font=("TkDefaultFont", 8)).grid(row=4, column=1, sticky=tk.W, padx=5)
+        
+        # Color variation
+        ttk.Label(prep_frame, text="Color Variation:").grid(row=5, column=0, sticky=tk.W, pady=5)
+        self.color_var_var = tk.DoubleVar(value=0.0)
+        color_scale = ttk.Scale(prep_frame, from_=0.0, to=30.0, variable=self.color_var_var, 
+                               orient=tk.HORIZONTAL, length=200)
+        color_scale.grid(row=5, column=1, sticky=tk.W, padx=5)
+        self.color_var_label = ttk.Label(prep_frame, text="0.0")
+        self.color_var_label.grid(row=5, column=2, sticky=tk.W)
+        self.color_var_var.trace_add('write', self.update_color_var_label)
+        ttk.Label(prep_frame, text="Randomly shifts hue/saturation slightly", 
+                 foreground="gray", font=("TkDefaultFont", 8)).grid(row=6, column=1, sticky=tk.W, padx=5)
+    
+    def setup_pixel_tab(self, parent):
+        """Setup Pixelate tab"""
         
         # === PIXELATION SETTINGS ===
-        pixel_frame = ttk.LabelFrame(main_frame, text="Pixelation Settings", padding="10")
+        pixel_frame = ttk.LabelFrame(parent, text="Pixelation Settings (Phase 2)", padding="10")
         pixel_frame.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=(0, 10))
         
         # Pixel width
@@ -142,7 +250,7 @@ class PixelatorGUI:
                  foreground="gray", font=("TkDefaultFont", 8)).grid(row=1, column=2, sticky=tk.W, padx=5)
         
         # === COLOR QUANTIZATION ===
-        color_frame = ttk.LabelFrame(main_frame, text="Color Quantization", padding="10")
+        color_frame = ttk.LabelFrame(parent, text="Color Quantization (Phase 2)", padding="10")
         color_frame.grid(row=2, column=0, sticky=(tk.W, tk.E), pady=(0, 10))
         
         # Quantization method
@@ -172,7 +280,7 @@ class PixelatorGUI:
         self.palette_label.grid(row=2, column=2, sticky=tk.W)
         
         # === DITHERING ===
-        dither_frame = ttk.LabelFrame(main_frame, text="Dithering", padding="10")
+        dither_frame = ttk.LabelFrame(parent, text="Dithering (Phase 2)", padding="10")
         dither_frame.grid(row=3, column=0, sticky=(tk.W, tk.E), pady=(0, 10))
         
         # Dither mode
@@ -203,7 +311,7 @@ class PixelatorGUI:
         self.dither_strength_var.trace_add('write', self.update_strength_label)
         
         # === ADVANCED OPTIONS ===
-        advanced_frame = ttk.LabelFrame(main_frame, text="Advanced Options", padding="10")
+        advanced_frame = ttk.LabelFrame(parent, text="Advanced Options", padding="10")
         advanced_frame.grid(row=4, column=0, sticky=(tk.W, tk.E), pady=(0, 10))
         
         # Normal map checkbox (stubbed out for future)
@@ -215,39 +323,15 @@ class PixelatorGUI:
         self.add_suffix_var = tk.BooleanVar(value=True)
         ttk.Checkbutton(advanced_frame, text="Add '_pixelated' suffix (batch mode)", 
                        variable=self.add_suffix_var).grid(row=1, column=0, sticky=tk.W, pady=5)
-        
-        # === PROCESS BUTTONS ===
-        button_frame = ttk.Frame(main_frame)
-        button_frame.grid(row=5, column=0, pady=10)
-        
-        ttk.Button(button_frame, text="Process Single File", 
-                  command=self.process_single, width=20).grid(row=0, column=0, padx=5)
-        ttk.Button(button_frame, text="Process Batch", 
-                  command=self.process_batch, width=20).grid(row=0, column=1, padx=5)
-        
-        # === STATUS ===
-        status_frame = ttk.Frame(main_frame)
-        status_frame.grid(row=6, column=0, sticky=(tk.W, tk.E))
-        
-        self.status_var = tk.StringVar(value="Ready")
-        status_label = ttk.Label(status_frame, textvariable=self.status_var, relief=tk.SUNKEN, anchor=tk.W)
-        status_label.pack(fill=tk.X, expand=True)
-        
-        # Success message area (hidden by default)
-        self.success_frame = ttk.Frame(main_frame)
-        self.success_frame.grid(row=7, column=0, sticky=(tk.W, tk.E), pady=(5, 0))
-        self.success_label = ttk.Label(self.success_frame, text="", foreground="green", wraplength=500, justify=tk.LEFT)
-        self.success_label.pack(fill=tk.X)
-        
-        # Error message area (hidden by default)
-        self.error_frame = ttk.Frame(main_frame)
-        self.error_frame.grid(row=8, column=0, sticky=(tk.W, tk.E), pady=(5, 0))
-        self.error_label = ttk.Label(self.error_frame, text="", foreground="red", wraplength=500, justify=tk.LEFT)
-        self.error_label.pack(fill=tk.X)
-        
-        # Initialize UI state
-        self.on_quantize_method_change()
-        self.on_dither_mode_change()
+    
+    def update_blur_label(self, *args):
+        self.blur_label.config(text=f"{self.blur_amount_var.get():.1f}")
+    
+    def update_noise_label(self, *args):
+        self.noise_label.config(text=f"{self.noise_amount_var.get():.1f}")
+    
+    def update_color_var_label(self, *args):
+        self.color_var_label.config(text=f"{self.color_var_var.get():.1f}")
     
     def browse_input_file(self):
         filename = filedialog.askopenfilename(
@@ -295,13 +379,13 @@ class PixelatorGUI:
         method = self.quantize_method_var.get()
         if method == "bit_depth":
             self.bits_spinbox.config(state="normal")
-            self.palette_spinbox.config(state="disabled")
+            self.palette_spinbox.config(state="readonly")
         elif method == "palette":
-            self.bits_spinbox.config(state="disabled")
+            self.bits_spinbox.config(state="readonly")
             self.palette_spinbox.config(state="normal")
         else:  # none
-            self.bits_spinbox.config(state="disabled")
-            self.palette_spinbox.config(state="disabled")
+            self.bits_spinbox.config(state="readonly")
+            self.palette_spinbox.config(state="readonly")
     
     def on_dither_mode_change(self, event=None):
         mode = self.dither_mode_var.get()
@@ -321,6 +405,9 @@ class PixelatorGUI:
     def get_settings(self):
         """Get current settings as dictionary"""
         return {
+            'blur_amount': self.blur_amount_var.get(),
+            'noise_amount': self.noise_amount_var.get(),
+            'color_variation': self.color_var_var.get(),
             'pixel_width': self.pixel_width_var.get(),
             'resample_mode': self.resample_var.get(),
             'quantize_method': self.quantize_method_var.get(),

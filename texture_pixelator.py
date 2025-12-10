@@ -2,9 +2,10 @@
 Texture Pixelator - Core pixelation and dithering functionality
 """
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageFilter
 from typing import Tuple, Optional, List
 import os
+import random
 
 
 class TexturePixelator:
@@ -40,6 +41,43 @@ class TexturePixelator:
             '4x4': self.BAYER_4X4,
             '8x8': self.BAYER_8X8
         }
+    
+    def preprocess_image(self, img: Image.Image, blur_amount: float = 0.0, 
+                        noise_amount: float = 0.0, color_variation: float = 0.0) -> Image.Image:
+        """
+        Apply preprocessing effects to add complexity before pixelation
+        
+        Args:
+            img: Input image
+            blur_amount: Gaussian blur radius (0 = no blur)
+            noise_amount: Random noise intensity (0-50)
+            color_variation: Random hue/saturation shift amount (0-30)
+        
+        Returns:
+            Preprocessed image
+        """
+        result = img.copy()
+        
+        # Apply blur
+        if blur_amount > 0:
+            result = result.filter(ImageFilter.GaussianBlur(radius=blur_amount))
+        
+        # Apply noise
+        if noise_amount > 0:
+            arr = np.array(result, dtype=np.float32)
+            noise = np.random.normal(0, noise_amount, arr.shape)
+            arr = np.clip(arr + noise, 0, 255)
+            result = Image.fromarray(arr.astype(np.uint8), mode=result.mode)
+        
+        # Apply color variation
+        if color_variation > 0 and result.mode == 'RGB':
+            arr = np.array(result, dtype=np.float32)
+            # Random hue shift per pixel
+            shift = np.random.uniform(-color_variation, color_variation, arr.shape)
+            arr = np.clip(arr + shift, 0, 255)
+            result = Image.fromarray(arr.astype(np.uint8), mode='RGB')
+        
+        return result
     
     def downsample_image(self, image: Image.Image, target_width: int, 
                         resample_mode: str = 'nearest') -> Image.Image:
@@ -178,22 +216,28 @@ class TexturePixelator:
         img_array = np.clip(img_array, 0, 255).astype(np.uint8)
         return Image.fromarray(img_array)
     
-    def process_texture(self, input_path: str, output_path: str, 
-                       pixel_width: int = 64,
+    def process_texture(self, input_path: str, output_path: str,
+                       blur_amount: float = 0.0,
+                       noise_amount: float = 0.0,
+                       color_variation: float = 0.0,
+                       pixel_width: int = 16,
                        resample_mode: str = 'nearest',
                        quantize_method: str = 'bit_depth',
                        bits_per_channel: int = 5,
-                       palette_colors: int = 32,
+                       palette_colors: int = 16,
                        dither_mode: str = 'none',
-                       bayer_size: str = '4x4',
-                       dither_strength: float = 0.5,
-                       is_normal_map: bool = False) -> bool:
+                       bayer_size: int = 4,
+                       dither_strength: float = 1.0,
+                       is_normal_map: bool = False) -> None:
         """
         Process a texture with all specified effects
         
         Args:
             input_path: Path to input image
             output_path: Path to save output image
+            blur_amount: Preprocessing blur radius (0 = no blur)
+            noise_amount: Preprocessing noise intensity (0-50)
+            color_variation: Preprocessing color variation (0-30)
             pixel_width: Target width in pixels
             resample_mode: 'nearest' or 'bilinear'
             quantize_method: 'none', 'bit_depth', or 'palette'
@@ -219,6 +263,14 @@ class TexturePixelator:
             else:
                 image = image.convert('RGB')
             
+            # Phase 1: Preprocessing
+            if blur_amount > 0 or noise_amount > 0 or color_variation > 0:
+                image = self.preprocess_image(image, blur_amount, noise_amount, color_variation)
+            
+            # Phase 2: Pixelation
+            # Step 1: Downsample
+            image = self.downsample_image(image, pixel_width, resample_mode)
+            # Phase 2: Pixelation
             # Step 1: Downsample
             image = self.downsample_image(image, pixel_width, resample_mode)
             
