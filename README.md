@@ -16,6 +16,10 @@ A free alternative to Pixel8r for creating retro-style pixelated textures with d
 1. Make sure you have Python 3.8+ installed
 2. Install dependencies:
 
+Ran terminal command: .venv/bin/python gui.py
+
+The GUI is now open! Try loading your swordTest project and clicking "Bake AO" - it should now produce proper ambient occlusion data instead of a black image.
+
 ```bash
 pip install -r requirements.txt
 ```

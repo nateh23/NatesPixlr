@@ -115,40 +115,102 @@ def bake_ao_map(obj_path, output_path, resolution, samples=32):
     nodes = mat.node_tree.nodes
     nodes.clear()
     
-    # Add image texture node
+    # CRITICAL: Add a Diffuse BSDF shader to the material
+    # Cycles might need an actual surface shader to calculate AO properly
+    diffuse_node = nodes.new('ShaderNodeBsdfDiffuse')
+    diffuse_node.location = (0, 100)
+    
+    # Add Material Output
+    output_node = nodes.new('ShaderNodeOutputMaterial')
+    output_node.location = (300, 100)
+    
+    # Connect diffuse to output
+    links = mat.node_tree.links
+    links.new(diffuse_node.outputs['BSDF'], output_node.inputs['Surface'])
+    
+    # Add image texture node (target for baking)
     img_node = nodes.new('ShaderNodeTexImage')
     img_node.image = img
     img_node.select = True
-    nodes.active = img_node
+    img_node.location = (0, -100)
+    nodes.active = img_node  # Must be active for baking
     
-    # Bake AO as grayscale mask
+    # For AO baking, the image node doesn't need to be connected
+    # It just needs to be selected/active
+    
+    # Bake AO directly with Cycles (confirmed working for simple geometry)
     bpy.context.scene.render.engine = 'CYCLES'
-    bpy.context.scene.cycles.bake_type = 'AO'
     bpy.context.scene.cycles.samples = samples
     bpy.context.scene.render.bake.use_selected_to_active = False
+    bpy.context.scene.render.bake.margin = 16  # Margin for bleeding
     
-    # AO settings for better crevice detection
-    # Set AO distance on the world shader nodes
+    # Recalculate normals and smooth shading for better AO
+    bpy.ops.object.mode_set(mode='EDIT')
+    bpy.ops.mesh.select_all(action='SELECT')
+    bpy.ops.mesh.normals_make_consistent(inside=False)  # Recalculate normals outward
+    bpy.ops.object.mode_set(mode='OBJECT')
+    bpy.ops.object.shade_smooth()
+    
+    # Optionally add ground plane for better AO occlusion
+    # (Remove if you want only self-occlusion)
+    bpy.ops.mesh.primitive_plane_add(size=20, location=(0, 0, -2))
+    
+    # Re-select the original object for baking
+    bpy.ops.object.select_all(action='DESELECT')
+    obj.select_set(True)
+    bpy.context.view_layer.objects.active = obj
+    
+    # Set world to simple white background
     if bpy.context.scene.world:
         bpy.context.scene.world.use_nodes = True
         world_nodes = bpy.context.scene.world.node_tree.nodes
-        for node in world_nodes:
-            if node.type == 'AMBIENT_OCCLUSION' or node.type == 'OUTPUT_WORLD':
-                pass  # AO distance is set in render settings below
+        world_nodes.clear()
+        
+        bg_node = world_nodes.new(type='ShaderNodeBackground')
+        bg_node.inputs[0].default_value = (1.0, 1.0, 1.0, 1.0)
+        
+        output_node = world_nodes.new(type='ShaderNodeOutputWorld')
+        output_node.location = (200, 0)
+        
+        world_tree = bpy.context.scene.world.node_tree
+        world_tree.links.new(bg_node.outputs[0], output_node.inputs[0])
     
-    # Set AO distance in render settings (Cycles)
-    bpy.context.scene.cycles.ao_bounces = 1
-    bpy.context.scene.cycles.ao_bounces_render = 1
+    # CRITICAL FIX: Bake with AO type
+    bpy.ops.object.bake(
+        type='AO',
+        margin=16,
+        use_clear=True,
+        use_selected_to_active=False,
+        use_cage=False
+    )
     
-    bpy.ops.object.bake(type='AO')
+    # Get the baked pixel data
+    pixels = list(img.pixels)
+    print(f"After baking: {len(pixels)} RGBA values")
+    
+    # CRITICAL FIX: The AO bake puts data in R channel, but we need it in all RGB channels
+    # Manually copy R to G and B for proper grayscale display
+    for i in range(0, len(pixels), 4):
+        ao_value = pixels[i]  # R channel contains AO
+        pixels[i+1] = ao_value  # Copy to G
+        pixels[i+2] = ao_value  # Copy to B
+        # pixels[i+3] remains as alpha
+    
+    img.pixels = pixels
+    img.update()  # Force update the image buffer
+    print(f"Copied R channel to RGB for grayscale output")
     
     # Save as grayscale PNG
+    # Try using pack() which forces data into the image, then save
+    img.pack()
     img.filepath_raw = output_path
     img.file_format = 'PNG'
     img.colorspace_settings.name = 'Non-Color'
     img.save()
+
     
     print(f"AO map saved to: {output_path}")
+
 
 
 if __name__ == "__main__":
