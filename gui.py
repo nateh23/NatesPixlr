@@ -32,7 +32,7 @@ class PixelatorGUI:
         
         # Color picker variables
         self.edge_color_var = '#FF8800'  # Orange
-        self.crevice_color_var = '#331100'  # Dark brown
+        self.ao_color_var = '#321E14'  # Dark brown for AO
         
         self.setup_ui()
     
@@ -314,24 +314,11 @@ class PixelatorGUI:
         ttk.Label(curv_frame, text="Brighten convex edges/ridges (0 = none, 1 = white)", 
                  foreground="gray", font=("TkDefaultFont", 8)).grid(row=4, column=1, sticky=tk.W, padx=5)
         
-        # Crevice Darken
-        ttk.Label(curv_frame, text="Crevice Darken:").grid(row=5, column=0, sticky=tk.W, pady=5)
-        self.crevice_darken_var = tk.DoubleVar(value=0.4)
-        self.crevice_darken_scale = ttk.Scale(curv_frame, from_=0.0, to=1.0, 
-                                             variable=self.crevice_darken_var, orient=tk.HORIZONTAL, 
-                                             length=200, state="disabled")
-        self.crevice_darken_scale.grid(row=5, column=1, sticky=tk.W, padx=5)
-        self.crevice_darken_label = ttk.Label(curv_frame, text="0.40")
-        self.crevice_darken_label.grid(row=5, column=2, sticky=tk.W)
-        self.crevice_darken_var.trace_add('write', self.update_crevice_darken_label)
-        ttk.Label(curv_frame, text="Darken concave areas/crevices (0 = none, 1 = black)", 
-                 foreground="gray", font=("TkDefaultFont", 8)).grid(row=6, column=1, sticky=tk.W, padx=5)
-        
         # === COLOR TINTING ===
-        tint_frame = ttk.LabelFrame(parent, text="Edge/Crevice Color Tinting", padding="10")
+        tint_frame = ttk.LabelFrame(parent, text="Edge Color Tinting", padding="10")
         tint_frame.grid(row=3, column=0, sticky=(tk.W, tk.E), pady=(0, 10))
         
-        ttk.Label(tint_frame, text="Tint edges and crevices with custom colors", 
+        ttk.Label(tint_frame, text="Blend custom color onto edges (requires baked edge map)", 
                  foreground="gray", font=("TkDefaultFont", 9, "italic")).grid(row=0, column=0, columnspan=3, sticky=tk.W, pady=(0, 10))
         
         # Edge Color Picker
@@ -348,32 +335,38 @@ class PixelatorGUI:
         ttk.Label(tint_frame, text="Color to blend onto convex edges/ridges", 
                  foreground="gray", font=("TkDefaultFont", 8)).grid(row=2, column=1, sticky=tk.W, padx=5)
         
-        # Crevice Color Picker
-        ttk.Label(tint_frame, text="Crevice Color:").grid(row=3, column=0, sticky=tk.W, pady=5)
+        # === AO / CREVICE EFFECTS ===
+        ao_frame = ttk.LabelFrame(parent, text="Ambient Occlusion (Crevices)", padding="10")
+        ao_frame.grid(row=4, column=0, sticky=(tk.W, tk.E), pady=(0, 10))
         
-        # Create canvas for circular color indicator
-        self.crevice_color_canvas = tk.Canvas(tint_frame, width=30, height=30, 
-                                             highlightthickness=1, highlightbackground="#999", cursor="")
-        self.crevice_color_canvas.grid(row=3, column=1, sticky=tk.W, padx=5)
-        self.crevice_color_canvas.bind("<Button-1>", lambda e: self.pick_crevice_color())
-        self.crevice_color_circle = self.crevice_color_canvas.create_oval(2, 2, 28, 28, 
-                                                                          fill=self.crevice_color_var, outline="#666", width=2)
+        ttk.Label(ao_frame, text="Darken and tint crevices (optional, requires baked AO map)", 
+                 foreground="gray", font=("TkDefaultFont", 9, "italic")).grid(row=0, column=0, columnspan=3, sticky=tk.W, pady=(0, 10))
         
-        ttk.Label(tint_frame, text="Color to blend into concave crevices/shadows", 
+        # AO Darken
+        ttk.Label(ao_frame, text="AO Darken:").grid(row=1, column=0, sticky=tk.W, pady=5)
+        self.ao_darken_var = tk.DoubleVar(value=0.5)
+        self.ao_darken_scale = ttk.Scale(ao_frame, from_=0.0, to=1.0, 
+                                         variable=self.ao_darken_var, orient=tk.HORIZONTAL, 
+                                         length=200, state="disabled")
+        self.ao_darken_scale.grid(row=1, column=1, sticky=tk.W, padx=5)
+        self.ao_darken_label = ttk.Label(ao_frame, text="0.50")
+        self.ao_darken_label.grid(row=1, column=2, sticky=tk.W)
+        self.ao_darken_var.trace_add('write', self.update_ao_darken_label)
+        ttk.Label(ao_frame, text="Darken occluded areas (0 = none, 1 = black)", 
+                 foreground="gray", font=("TkDefaultFont", 8)).grid(row=2, column=1, sticky=tk.W, padx=5)
+        
+        # AO Color Picker
+        ttk.Label(ao_frame, text="AO Color:").grid(row=3, column=0, sticky=tk.W, pady=5)
+        
+        self.ao_color_canvas = tk.Canvas(ao_frame, width=30, height=30, 
+                                         highlightthickness=1, highlightbackground="#999", cursor="")
+        self.ao_color_canvas.grid(row=3, column=1, sticky=tk.W, padx=5)
+        self.ao_color_canvas.bind("<Button-1>", lambda e: self.pick_ao_color())
+        self.ao_color_circle = self.ao_color_canvas.create_oval(2, 2, 28, 28, 
+                                                                fill=self.ao_color_var, outline="#666", width=2)
+        
+        ttk.Label(ao_frame, text="Color to blend into occluded areas", 
                  foreground="gray", font=("TkDefaultFont", 8)).grid(row=4, column=1, sticky=tk.W, padx=5)
-        
-        # Saturation boost
-        ttk.Label(tint_frame, text="Edge Saturation:").grid(row=5, column=0, sticky=tk.W, pady=5)
-        self.edge_saturation_var = tk.DoubleVar(value=0.2)
-        self.edge_sat_scale = ttk.Scale(tint_frame, from_=-1.0, to=1.0, 
-                                       variable=self.edge_saturation_var, orient=tk.HORIZONTAL, 
-                                       length=200, state="disabled")
-        self.edge_sat_scale.grid(row=5, column=1, sticky=tk.W, padx=5)
-        self.edge_sat_label = ttk.Label(tint_frame, text="0.20")
-        self.edge_sat_label.grid(row=5, column=2, sticky=tk.W)
-        self.edge_saturation_var.trace_add('write', self.update_edge_sat_label)
-        ttk.Label(tint_frame, text="Saturation change on edges (-1 = gray, +1 = vibrant)", 
-                 foreground="gray", font=("TkDefaultFont", 8)).grid(row=6, column=1, sticky=tk.W, padx=5)
         
         # === BAKE MAPS ===
         bake_frame = ttk.LabelFrame(parent, text="Bake Maps", padding="10")
@@ -388,23 +381,33 @@ class PixelatorGUI:
         ttk.Spinbox(bake_frame, from_=256, to=4096, increment=256, textvariable=self.bake_resolution_var, width=10).grid(row=1, column=1, sticky=tk.W, padx=5)
         ttk.Label(bake_frame, text="pixels (higher = more detail)", foreground="gray", font=("TkDefaultFont", 8)).grid(row=1, column=2, sticky=tk.W, padx=5)
         
-        # Bake button and status
-        self.bake_button = ttk.Button(bake_frame, text="Bake Edge Map", 
-                                      command=self.bake_edge_maps, state="disabled")
-        self.bake_button.grid(row=2, column=0, columnspan=2, sticky=tk.W, padx=5, pady=(10, 5))
+        # Bake buttons and status
+        button_row = ttk.Frame(bake_frame)
+        button_row.grid(row=2, column=0, columnspan=3, sticky=tk.W, pady=(10, 5))
         
-        self.bake_status_label = ttk.Label(bake_frame, text="No baked map found", 
-                                          foreground="gray", font=("TkDefaultFont", 8))
-        self.bake_status_label.grid(row=3, column=0, columnspan=3, sticky=tk.W, padx=5, pady=(0, 5))
+        self.bake_edge_button = ttk.Button(button_row, text="Bake Edge Map", 
+                                           command=self.bake_edge_maps, state="disabled")
+        self.bake_edge_button.pack(side=tk.LEFT, padx=(0, 5))
+        
+        self.bake_ao_button = ttk.Button(button_row, text="Bake AO Map", 
+                                         command=self.bake_ao_map, state="disabled")
+        self.bake_ao_button.pack(side=tk.LEFT)
+        
+        self.edge_status_label = ttk.Label(bake_frame, text="Edge: Not found", 
+                                           foreground="gray", font=("TkDefaultFont", 8))
+        self.edge_status_label.grid(row=3, column=0, columnspan=3, sticky=tk.W, padx=5, pady=(0, 2))
+        
+        self.ao_status_label = ttk.Label(bake_frame, text="AO: Not found", 
+                                         foreground="gray", font=("TkDefaultFont", 8))
+        self.ao_status_label.grid(row=4, column=0, columnspan=3, sticky=tk.W, padx=5, pady=(0, 5))
         
         # Store references for enable/disable
         self.surface_widgets = {
             'scales': [
-                self.curv_strength_scale, self.edge_highlight_scale, self.crevice_darken_scale,
-                self.edge_sat_scale
+                self.curv_strength_scale, self.edge_highlight_scale, self.ao_darken_scale
             ],
-            'canvases': [self.edge_color_canvas, self.crevice_color_canvas],
-            'buttons': [self.bake_button]
+            'canvases': [self.edge_color_canvas, self.ao_color_canvas],
+            'buttons': [self.bake_edge_button, self.bake_ao_button]
         }
         
         # Check for existing baked map on project load
@@ -522,12 +525,11 @@ class PixelatorGUI:
     
     def update_edge_highlight_label(self, *args):
         self.edge_highlight_label.config(text=f"{self.edge_highlight_var.get():.2f}")
+        self.mark_modified()
     
-    def update_crevice_darken_label(self, *args):
-        self.crevice_darken_label.config(text=f"{self.crevice_darken_var.get():.2f}")
-    
-    def update_edge_sat_label(self, *args):
-        self.edge_sat_label.config(text=f"{self.edge_saturation_var.get():.2f}")
+    def update_ao_darken_label(self, *args):
+        self.ao_darken_label.config(text=f"{self.ao_darken_var.get():.2f}")
+        self.mark_modified()
     
     def on_surface_toggle(self):
         """Enable/disable surface effect controls based on checkbox"""
@@ -643,10 +645,9 @@ class PixelatorGUI:
             'model_path': self.model_path_var.get() if self.enable_surface_var.get() else None,
             'curvature_strength': self.curv_strength_var.get(),
             'edge_highlight': self.edge_highlight_var.get(),
-            'crevice_darken': self.crevice_darken_var.get(),
+            'ao_darken': self.ao_darken_var.get(),
             'edge_color': self.hex_to_rgb(self.edge_color_var),
-            'crevice_color': self.hex_to_rgb(self.crevice_color_var),
-            'edge_saturation': self.edge_saturation_var.get(),
+            'ao_color': self.hex_to_rgb(self.ao_color_var),
             'pixel_width': self.pixel_width_var.get(),
             'resample_mode': self.resample_var.get(),
             'quantize_method': self.quantize_method_var.get(),
@@ -658,12 +659,17 @@ class PixelatorGUI:
             'is_normal_map': self.is_normal_map_var.get()
         }
         
-        # Add baked map path if project is saved and map exists
+        # Add baked map paths if project is saved and maps exist
         if self.current_project_path:
             project_dir = os.path.dirname(self.current_project_path)
-            baked_map_path = os.path.join(project_dir, "edge.png")
-            if os.path.exists(baked_map_path):
-                settings['baked_map_path'] = baked_map_path
+            
+            edge_map_path = os.path.join(project_dir, "edge.png")
+            if os.path.exists(edge_map_path):
+                settings['baked_map_path'] = edge_map_path
+            
+            ao_map_path = os.path.join(project_dir, "ao.png")
+            if os.path.exists(ao_map_path):
+                settings['ao_map_path'] = ao_map_path
         
         return settings
     
@@ -941,10 +947,9 @@ class PixelatorGUI:
         self.model_path_var.set('')
         self.curv_strength_var.set(5.0)
         self.edge_highlight_var.set(0.3)
-        self.crevice_darken_var.set(0.4)
+        self.ao_darken_var.set(0.5)
         self.edge_color_var = '#FF8800'
-        self.crevice_color_var = '#331100'
-        self.edge_saturation_var.set(0.2)
+        self.ao_color_var = '#321E14'
         self.pixel_width_var.set(64)
         self.resample_var.set('nearest')
         self.quantize_method_var.set('bit_depth')
@@ -1068,15 +1073,15 @@ class PixelatorGUI:
             self.edge_color_canvas.itemconfig(self.edge_color_circle, fill=color[1])
             self.mark_modified()
     
-    def pick_crevice_color(self):
-        """Open color picker for crevice color"""
+    def pick_ao_color(self):
+        """Open color picker for AO color"""
         color = colorchooser.askcolor(
-            title="Choose Crevice Color",
-            initialcolor=self.crevice_color_var
+            title="Choose AO Color",
+            initialcolor=self.ao_color_var
         )
         if color[1]:  # color[1] is the hex string
-            self.crevice_color_var = color[1]
-            self.crevice_color_canvas.itemconfig(self.crevice_color_circle, fill=color[1])
+            self.ao_color_var = color[1]
+            self.ao_color_canvas.itemconfig(self.ao_color_circle, fill=color[1])
             self.mark_modified()
     
     def hex_to_rgb(self, hex_color):
@@ -1093,26 +1098,40 @@ class PixelatorGUI:
                 self.preview_canvas.coords(self.preview_text_id, canvas_width // 2, canvas_height // 2)
     
     def check_baked_map_status(self):
-        """Check if baked edge map exists and update UI"""
+        """Check if baked edge and AO maps exist and update UI"""
         if not self.current_project_path:
-            self.bake_status_label.config(text="Save project to enable baking", foreground="gray")
+            self.edge_status_label.config(text="Edge: Save project first", foreground="gray")
+            self.ao_status_label.config(text="AO: Save project first", foreground="gray")
             return
         
         project_dir = os.path.dirname(self.current_project_path)
-        baked_map_path = os.path.join(project_dir, "edge.png")
+        edge_path = os.path.join(project_dir, "edge.png")
+        ao_path = os.path.join(project_dir, "ao.png")
         
-        if os.path.exists(baked_map_path):
-            # Get file size for display
-            size_bytes = os.path.getsize(baked_map_path)
-            size_mb = size_bytes / (1024 * 1024)
-            self.bake_status_label.config(
-                text=f"✓ Edge map found: edge.png ({size_mb:.1f} MB)",
+        # Check edge map
+        if os.path.exists(edge_path):
+            size_mb = os.path.getsize(edge_path) / (1024 * 1024)
+            self.edge_status_label.config(
+                text=f"✓ Edge: edge.png ({size_mb:.1f} MB)",
                 foreground="green"
             )
         else:
-            self.bake_status_label.config(
-                text="No edge map found - click above to generate",
+            self.edge_status_label.config(
+                text="Edge: Not found (required)",
                 foreground="orange"
+            )
+        
+        # Check AO map
+        if os.path.exists(ao_path):
+            size_mb = os.path.getsize(ao_path) / (1024 * 1024)
+            self.ao_status_label.config(
+                text=f"✓ AO: ao.png ({size_mb:.1f} MB)",
+                foreground="green"
+            )
+        else:
+            self.ao_status_label.config(
+                text="AO: Not found (optional)",
+                foreground="gray"
             )
     
     def bake_edge_maps(self):
@@ -1157,6 +1176,48 @@ class PixelatorGUI:
                             f"It will be automatically used for faster processing.")
         else:
             self.show_error("Failed to bake edge map")
+    
+    def bake_ao_map(self):
+        """Bake AO map from 3D model"""
+        # Check if project is saved
+        if not self.current_project_path:
+            result = messagebox.askyesno("Save Project First", 
+                                        "Baked maps are saved in your project folder.\n\n"
+                                        "Would you like to save your project now?")
+            if result:
+                if not self.save_project_as():
+                    return
+            else:
+                return
+        
+        model_path = self.model_path_var.get()
+        if not model_path or not os.path.exists(model_path):
+            self.show_error("Please select a valid 3D model file first")
+            return
+        
+        # Output path in project folder
+        project_dir = os.path.dirname(self.current_project_path)
+        output_path = os.path.join(project_dir, "ao.png")
+        
+        # Get resolution from UI
+        resolution = self.bake_resolution_var.get()
+        
+        self.status_var.set("Baking AO map...")
+        self.root.update()
+        
+        # Bake the AO map
+        success = self.pixelator.surface_baker.bake_ao_map(
+            model_path, output_path, resolution, samples=32, distance=0.5
+        )
+        
+        self.status_var.set("Ready")
+        
+        if success:
+            self.check_baked_map_status()
+            self.show_success(f"AO map saved to project folder\n"
+                            f"It will be automatically used for crevice effects.")
+        else:
+            self.show_error("Failed to bake AO map")
 
 
 def main():

@@ -298,14 +298,20 @@ class SurfaceEffectsBaker:
     def apply_surface_effects_to_texture(self, img: Image.Image,
                                         edge_highlight: float = 0.3,
                                         edge_color: tuple = (255, 136, 0),
-                                        edge_map_path: str = None) -> Image.Image:
-        """Apply surface effects using pre-baked edge map
+                                        edge_map_path: str = None,
+                                        ao_darken: float = 0.5,
+                                        ao_color: tuple = (50, 30, 20),
+                                        ao_map_path: str = None) -> Image.Image:
+        """Apply surface effects using pre-baked edge and AO maps
         
         Args:
             img: Input texture image
             edge_highlight: Brightness boost on edges (0-1)
             edge_color: RGB tuple (0-255) to blend onto edges
             edge_map_path: Path to pre-baked edge map (REQUIRED)
+            ao_darken: How much to darken crevices (0-1)
+            ao_color: RGB tuple (0-255) to blend into occluded areas
+            ao_map_path: Path to pre-baked AO map (optional)
             
         Returns:
             Texture with surface effects applied
@@ -321,7 +327,6 @@ class SurfaceEffectsBaker:
             edge_img = Image.open(edge_map_path).convert('L')
             if edge_img.size != (width, height):
                 edge_img = edge_img.resize((width, height), Image.BILINEAR)
-            # Convert to normalized array [0, 1]
             edge_mask = np.array(edge_img, dtype=np.float32) / 255.0
             print(f"Using edge map: {Path(edge_map_path).name}")
         except Exception as e:
@@ -331,20 +336,48 @@ class SurfaceEffectsBaker:
         # Convert image to array
         img_array = np.array(img, dtype=np.float32)
         
-        # Apply brightness boost on edges
-        for c in range(3):  # RGB channels
+        # Apply edge effects
+        # 1. Brightness boost on edges
+        for c in range(3):
             img_array[:, :, c] += edge_highlight * edge_mask * 255
         
         img_array = np.clip(img_array, 0, 255)
         
-        # Blend edge color using mask
+        # 2. Blend edge color
         edge_color_array = np.array(edge_color, dtype=np.float32)
         blend_strength = 0.7  # How much edge color to blend (increased for visibility)
         
         for c in range(3):
-            # Where edge_mask is high (white), blend more edge color
             img_array[:, :, c] = img_array[:, :, c] * (1 - edge_mask * blend_strength) + \
                                 edge_color_array[c] * edge_mask * blend_strength
+        
+        # Apply AO effects if map provided
+        if ao_map_path and Path(ao_map_path).exists():
+            try:
+                # Load AO map
+                ao_img = Image.open(ao_map_path).convert('L')
+                if ao_img.size != (width, height):
+                    ao_img = ao_img.resize((width, height), Image.BILINEAR)
+                ao_mask = np.array(ao_img, dtype=np.float32) / 255.0
+                print(f"Using AO map: {Path(ao_map_path).name}")
+                
+                # Invert: 1=bright (not occluded), 0=dark (occluded)
+                occlusion_mask = 1.0 - ao_mask
+                
+                # 1. Darken occluded areas
+                for c in range(3):
+                    img_array[:, :, c] *= (1.0 - ao_darken * occlusion_mask)
+                
+                # 2. Blend AO color into crevices
+                ao_color_array = np.array(ao_color, dtype=np.float32)
+                ao_blend_strength = 0.5
+                
+                for c in range(3):
+                    img_array[:, :, c] = img_array[:, :, c] * (1 - occlusion_mask * ao_blend_strength) + \
+                                        ao_color_array[c] * occlusion_mask * ao_blend_strength
+                
+            except Exception as e:
+                print(f"Failed to load AO map: {e}")
         
         img_array = np.clip(img_array, 0, 255).astype(np.uint8)
         return Image.fromarray(img_array)
@@ -352,7 +385,7 @@ class SurfaceEffectsBaker:
     def bake_curvature_map(self, model_path: str, output_path: str, 
                           resolution: int = 1024, strength: float = 5.0) -> bool:
         """
-        Bake curvature map from 3D model to a PNG file
+        Bake curvature map from 3D model to a PNG file (edges only)
         
         Args:
             model_path: Path to 3D model file
@@ -389,6 +422,49 @@ class SurfaceEffectsBaker:
             
         except Exception as e:
             print(f"Error baking curvature map: {e}")
+            return False
+    
+    def bake_ao_map(self, model_path: str, output_path: str,
+                    resolution: int = 1024, samples: int = 32, 
+                    distance: float = 0.5) -> bool:
+        """
+        Bake ambient occlusion map from 3D model to a PNG file (crevices)
+        
+        Args:
+            model_path: Path to 3D model file
+            output_path: Path to save AO map PNG
+            resolution: Map resolution
+            samples: Number of AO ray samples
+            distance: Ray distance for AO calculation
+            
+        Returns:
+            True if successful
+        """
+        try:
+            # Load model
+            if Path(model_path).suffix.lower() == '.obj':
+                if not self.load_obj(model_path):
+                    print("Failed to load model")
+                    return False
+            else:
+                print(f"Unsupported model format: {Path(model_path).suffix}")
+                return False
+            
+            # Compute AO map
+            ao_map = self.compute_ao_map(resolution, resolution, samples, distance)
+            
+            # Normalize to 0-255 (0=fully occluded/dark, 255=fully lit/bright)
+            ao_map = np.clip(ao_map * 255, 0, 255).astype(np.uint8)
+            
+            # Save as grayscale PNG
+            img = Image.fromarray(ao_map, mode='L')
+            img.save(output_path)
+            
+            print(f"AO map saved to: {output_path}")
+            return True
+            
+        except Exception as e:
+            print(f"Error baking AO map: {e}")
             return False
     
     def apply_ao_to_texture(self, img: Image.Image, model_path: str,

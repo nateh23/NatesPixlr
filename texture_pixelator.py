@@ -226,11 +226,11 @@ class TexturePixelator:
                        model_path: str = None,
                        curvature_strength: float = 0.5,
                        edge_highlight: float = 0.3,
-                       crevice_darken: float = 0.4,
+                       ao_darken: float = 0.5,
                        edge_color: tuple = (255, 136, 0),
-                       crevice_color: tuple = (51, 17, 0),
-                       edge_saturation: float = 0.2,
+                       ao_color: tuple = (50, 30, 20),
                        baked_map_path: str = None,
+                       ao_map_path: str = None,
                        pixel_width: int = 16,
                        resample_mode: str = 'nearest',
                        quantize_method: str = 'bit_depth',
@@ -276,9 +276,10 @@ class TexturePixelator:
             
             # Phase 1: Surface Effects (apply BEFORE preprocessing so blur affects edges too)
             if enable_surface and baked_map_path:
-                print("Applying surface effects from baked edge map...")
+                print("Applying surface effects from baked maps...")
                 image = self.surface_baker.apply_surface_effects_to_texture(
-                    image, edge_highlight, edge_color, baked_map_path
+                    image, edge_highlight, edge_color, baked_map_path,
+                    ao_darken, ao_color, ao_map_path
                 )
             
             # Phase 2: Preprocessing

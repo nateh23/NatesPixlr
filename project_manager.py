@@ -81,10 +81,9 @@ class ProjectManager:
             'model_path': gui.model_path_var.get(),
             'curvature_strength': gui.curv_strength_var.get(),
             'edge_highlight': gui.edge_highlight_var.get(),
-            'crevice_darken': gui.crevice_darken_var.get(),
+            'ao_darken': gui.ao_darken_var.get(),
             'edge_color': gui.edge_color_var if hasattr(gui, 'edge_color_var') else '#FF8800',
-            'crevice_color': gui.crevice_color_var if hasattr(gui, 'crevice_color_var') else '#331100',
-            'edge_saturation': gui.edge_saturation_var.get(),
+            'ao_color': gui.ao_color_var if hasattr(gui, 'ao_color_var') else '#321E14',
             
             # Pixelation
             'pixel_width': gui.pixel_width_var.get(),
@@ -139,18 +138,22 @@ class ProjectManager:
                 gui.curv_strength_var.set(settings['curvature_strength'])
             if 'edge_highlight' in settings:
                 gui.edge_highlight_var.set(settings['edge_highlight'])
-            if 'crevice_darken' in settings:
-                gui.crevice_darken_var.set(settings['crevice_darken'])
+            if 'ao_darken' in settings:
+                gui.ao_darken_var.set(settings['ao_darken'])
+            elif 'crevice_darken' in settings:  # Backward compatibility
+                gui.ao_darken_var.set(settings['crevice_darken'])
             if 'edge_color' in settings and hasattr(gui, 'edge_color_var'):
                 gui.edge_color_var = settings['edge_color']
                 if hasattr(gui, 'edge_color_canvas'):
                     gui.edge_color_canvas.itemconfig(gui.edge_color_circle, fill=settings['edge_color'])
-            if 'crevice_color' in settings and hasattr(gui, 'crevice_color_var'):
-                gui.crevice_color_var = settings['crevice_color']
-                if hasattr(gui, 'crevice_color_canvas'):
-                    gui.crevice_color_canvas.itemconfig(gui.crevice_color_circle, fill=settings['crevice_color'])
-            if 'edge_saturation' in settings:
-                gui.edge_saturation_var.set(settings['edge_saturation'])
+            if 'ao_color' in settings and hasattr(gui, 'ao_color_var'):
+                gui.ao_color_var = settings['ao_color']
+                if hasattr(gui, 'ao_color_canvas'):
+                    gui.ao_color_canvas.itemconfig(gui.ao_color_circle, fill=settings['ao_color'])
+            elif 'crevice_color' in settings and hasattr(gui, 'ao_color_var'):  # Backward compatibility
+                gui.ao_color_var = settings['crevice_color']
+                if hasattr(gui, 'ao_color_canvas'):
+                    gui.ao_color_canvas.itemconfig(gui.ao_color_circle, fill=settings['crevice_color'])
             
             # Pixelation
             if 'pixel_width' in settings:
