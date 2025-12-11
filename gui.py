@@ -30,6 +30,9 @@ class PixelatorGUI:
         self.current_project_path = None
         self.project_modified = False
         
+        # Recent projects list (max 10)
+        self.recent_projects = self.load_recent_projects()
+        
         # Color picker variables
         self.edge_color_var = '#FF8800'  # Orange
         self.ao_color_var = '#321E14'  # Dark brown for AO
@@ -1066,6 +1069,12 @@ class PixelatorGUI:
         file_menu.add_command(label="New Project", command=self.new_project, accelerator="Cmd+N")
         file_menu.add_separator()
         file_menu.add_command(label="Open Project...", command=self.load_project, accelerator="Cmd+O")
+        
+        # Recent projects submenu
+        self.recent_menu = tk.Menu(file_menu, tearoff=0)
+        file_menu.add_cascade(label="Open Recent", menu=self.recent_menu)
+        self.update_recent_menu()
+        
         file_menu.add_separator()
         file_menu.add_command(label="Save Project", command=self.save_project, accelerator="Cmd+S")
         file_menu.add_command(label="Save Project As...", command=self.save_project_as, accelerator="Cmd+Shift+S")
@@ -1164,6 +1173,7 @@ class PixelatorGUI:
             self.project_modified = False
             self.update_title()
             self.check_baked_map_status()
+            self.add_to_recent_projects(filepath)
             self.show_success(f"Project saved in folder: {project_name}")
             return True
         else:
@@ -1192,6 +1202,7 @@ class PixelatorGUI:
                 if self.project_manager.apply_settings_to_gui(self, settings):
                     self.current_project_path = filepath
                     self.project_modified = False
+                    self.add_to_recent_projects(filepath)
                     self.update_title()
                     self.check_baked_map_status()
                     self.show_success(f"Project loaded: {os.path.basename(filepath)}")
@@ -1199,6 +1210,124 @@ class PixelatorGUI:
                     self.show_error("Failed to apply project settings")
             else:
                 self.show_error("Failed to load project file")
+    
+    def load_recent_project(self, filepath):
+        """Load a project from the recent projects list"""
+        if not os.path.exists(filepath):
+            messagebox.showerror("File Not Found", f"Project file not found:\n{filepath}")
+            self.remove_from_recent_projects(filepath)
+            return
+        
+        if self.project_modified:
+            result = messagebox.askyesnocancel("Unsaved Changes", 
+                                              "Save current project before loading?")
+            if result is None:  # Cancel
+                return
+            elif result:  # Yes
+                if not self.save_project():
+                    return
+        
+        settings = self.project_manager.load_project(filepath)
+        if settings:
+            if self.project_manager.apply_settings_to_gui(self, settings):
+                self.current_project_path = filepath
+                self.project_modified = False
+                self.add_to_recent_projects(filepath)
+                self.update_title()
+                self.check_baked_map_status()
+                self.show_success(f"Project loaded: {os.path.basename(filepath)}")
+            else:
+                self.show_error("Failed to apply project settings")
+        else:
+            self.show_error("Failed to load project file")
+    
+    def load_recent_projects(self):
+        """Load recent projects list from config file"""
+        config_dir = Path.home() / '.texture_pixelator'
+        config_file = config_dir / 'recent_projects.txt'
+        
+        if config_file.exists():
+            try:
+                with open(config_file, 'r') as f:
+                    projects = [line.strip() for line in f.readlines() if line.strip()]
+                    # Filter out non-existent files
+                    return [p for p in projects if os.path.exists(p)][:10]
+            except Exception as e:
+                print(f"Failed to load recent projects: {e}")
+        return []
+    
+    def save_recent_projects(self):
+        """Save recent projects list to config file"""
+        config_dir = Path.home() / '.texture_pixelator'
+        config_dir.mkdir(exist_ok=True)
+        config_file = config_dir / 'recent_projects.txt'
+        
+        try:
+            with open(config_file, 'w') as f:
+                for project in self.recent_projects:
+                    f.write(project + '\n')
+        except Exception as e:
+            print(f"Failed to save recent projects: {e}")
+    
+    def add_to_recent_projects(self, filepath):
+        """Add a project to the recent projects list"""
+        filepath = os.path.abspath(filepath)
+        
+        # Remove if already in list
+        if filepath in self.recent_projects:
+            self.recent_projects.remove(filepath)
+        
+        # Add to front
+        self.recent_projects.insert(0, filepath)
+        
+        # Keep only last 10
+        self.recent_projects = self.recent_projects[:10]
+        
+        self.save_recent_projects()
+        self.update_recent_menu()
+    
+    def remove_from_recent_projects(self, filepath):
+        """Remove a project from recent projects list"""
+        if filepath in self.recent_projects:
+            self.recent_projects.remove(filepath)
+            self.save_recent_projects()
+            self.update_recent_menu()
+    
+    def clear_recent_projects(self):
+        """Clear all recent projects"""
+        self.recent_projects = []
+        self.save_recent_projects()
+        self.update_recent_menu()
+    
+    def update_recent_menu(self):
+        """Update the recent projects submenu"""
+        # Clear existing items
+        self.recent_menu.delete(0, tk.END)
+        
+        if self.recent_projects:
+            for i, filepath in enumerate(self.recent_projects):
+                display_name = os.path.basename(filepath)
+                project_dir = os.path.dirname(filepath)
+                
+                # Add menu item with keyboard shortcut for first 9
+                if i < 9:
+                    self.recent_menu.add_command(
+                        label=f"{display_name}  ({project_dir})",
+                        command=lambda p=filepath: self.load_recent_project(p),
+                        accelerator=f"Cmd+{i+1}"
+                    )
+                    # Bind keyboard shortcut
+                    self.root.bind(f'<Command-{i+1}>', lambda e, p=filepath: self.load_recent_project(p))
+                else:
+                    self.recent_menu.add_command(
+                        label=f"{display_name}  ({project_dir})",
+                        command=lambda p=filepath: self.load_recent_project(p)
+                    )
+            
+            self.recent_menu.add_separator()
+            self.recent_menu.add_command(label="Clear Recent", command=self.clear_recent_projects)
+        else:
+            self.recent_menu.add_command(label="(No Recent Projects)", state="disabled")
     
     def update_title(self):
         """Update window title with project name and modified status"""

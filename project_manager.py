@@ -75,26 +75,37 @@ class ProjectManager:
             'blur_amount': gui.blur_amount_var.get(),
             'noise_amount': gui.noise_amount_var.get(),
             'color_variation': gui.color_var_var.get(),
+            'flood_fill_color': gui.flood_fill_var.get(),
+            'flood_fill_opacity': gui.flood_fill_opacity_var.get(),
+            'hue_shift': gui.hue_shift_var.get(),
+            'tint_strength': gui.tint_strength_var.get(),
             
             # Surface Effects
             'enable_surface': gui.enable_surface_var.get(),
             'model_path': gui.model_path_var.get(),
             'curvature_strength': gui.curv_strength_var.get(),
+            'enable_edge': gui.enable_edge_var.get(),
             'edge_highlight': gui.edge_highlight_var.get(),
+            'edge_saturation': gui.edge_saturation_var.get(),
+            'edge_blend': gui.edge_blend_var.get(),
+            'enable_ao': gui.enable_ao_var.get(),
             'ao_darken': gui.ao_darken_var.get(),
+            'ao_blend': gui.ao_blend_var.get(),
             'edge_color': gui.edge_color_var if hasattr(gui, 'edge_color_var') else '#FF8800',
             'ao_color': gui.ao_color_var if hasattr(gui, 'ao_color_var') else '#321E14',
             
             # Pixelation
             'pixel_width': gui.pixel_width_var.get(),
             'resample_mode': gui.resample_var.get(),
+            'enable_greedy_expand': gui.enable_greedy_expand_var.get(),
+            'greedy_iterations': gui.greedy_iterations_var.get(),
             'quantize_method': gui.quantize_method_var.get(),
             'bits_per_channel': gui.bits_per_channel_var.get(),
             'palette_colors': gui.palette_colors_var.get(),
             'dither_mode': gui.dither_mode_var.get(),
             'bayer_size': gui.bayer_size_var.get(),
             'dither_strength': gui.dither_strength_var.get(),
-            'add_suffix': gui.suffix_var.get() if hasattr(gui, 'suffix_var') else False,
+            'add_suffix': gui.add_suffix_var.get() if hasattr(gui, 'add_suffix_var') else False,
         }
         
         return settings
@@ -127,6 +138,16 @@ class ProjectManager:
                 gui.noise_amount_var.set(settings['noise_amount'])
             if 'color_variation' in settings:
                 gui.color_var_var.set(settings['color_variation'])
+            if 'flood_fill_color' in settings:
+                gui.flood_fill_var.set(settings['flood_fill_color'])
+                if hasattr(gui, 'flood_fill_canvas'):
+                    gui.flood_fill_canvas.itemconfig(gui.flood_fill_circle, fill=settings['flood_fill_color'])
+            if 'flood_fill_opacity' in settings:
+                gui.flood_fill_opacity_var.set(settings['flood_fill_opacity'])
+            if 'hue_shift' in settings:
+                gui.hue_shift_var.set(settings['hue_shift'])
+            if 'tint_strength' in settings:
+                gui.tint_strength_var.set(settings['tint_strength'])
             
             # Surface Effects
             if 'enable_surface' in settings:
@@ -136,12 +157,22 @@ class ProjectManager:
                 gui.model_path_var.set(settings['model_path'])
             if 'curvature_strength' in settings:
                 gui.curv_strength_var.set(settings['curvature_strength'])
+            if 'enable_edge' in settings:
+                gui.enable_edge_var.set(settings['enable_edge'])
             if 'edge_highlight' in settings:
                 gui.edge_highlight_var.set(settings['edge_highlight'])
+            if 'edge_saturation' in settings:
+                gui.edge_saturation_var.set(settings['edge_saturation'])
+            if 'edge_blend' in settings:
+                gui.edge_blend_var.set(settings['edge_blend'])
+            if 'enable_ao' in settings:
+                gui.enable_ao_var.set(settings['enable_ao'])
             if 'ao_darken' in settings:
                 gui.ao_darken_var.set(settings['ao_darken'])
             elif 'crevice_darken' in settings:  # Backward compatibility
                 gui.ao_darken_var.set(settings['crevice_darken'])
+            if 'ao_blend' in settings:
+                gui.ao_blend_var.set(settings['ao_blend'])
             if 'edge_color' in settings and hasattr(gui, 'edge_color_var'):
                 gui.edge_color_var = settings['edge_color']
                 if hasattr(gui, 'edge_color_canvas'):
@@ -160,6 +191,11 @@ class ProjectManager:
                 gui.pixel_width_var.set(settings['pixel_width'])
             if 'resample_mode' in settings:
                 gui.resample_var.set(settings['resample_mode'])
+            if 'enable_greedy_expand' in settings:
+                gui.enable_greedy_expand_var.set(settings['enable_greedy_expand'])
+                gui.on_greedy_toggle()  # Update UI state
+            if 'greedy_iterations' in settings:
+                gui.greedy_iterations_var.set(settings['greedy_iterations'])
             if 'quantize_method' in settings:
                 gui.quantize_method_var.set(settings['quantize_method'])
                 gui.on_quantize_method_change()  # Update UI state
@@ -174,8 +210,8 @@ class ProjectManager:
                 gui.bayer_size_var.set(settings['bayer_size'])
             if 'dither_strength' in settings:
                 gui.dither_strength_var.set(settings['dither_strength'])
-            if 'add_suffix' in settings and hasattr(gui, 'suffix_var'):
-                gui.suffix_var.set(settings['add_suffix'])
+            if 'add_suffix' in settings and hasattr(gui, 'add_suffix_var'):
+                gui.add_suffix_var.set(settings['add_suffix'])
             
             return True
         except Exception as e:
