@@ -470,6 +470,13 @@ class PixelatorGUI:
         ttk.Label(pixel_frame, text="nearest = sharp, bilinear = softer", 
                  foreground="gray", font=("TkDefaultFont", 8)).grid(row=1, column=2, sticky=tk.W, padx=5)
         
+        # Greedy expansion toggle
+        self.enable_greedy_expand_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(pixel_frame, text="Greedy Pixel Expansion (prevents background bleed at UV seams)", 
+                       variable=self.enable_greedy_expand_var).grid(row=2, column=0, columnspan=3, sticky=tk.W, pady=(10, 5))
+        ttk.Label(pixel_frame, text="Expands foreground pixels outward to prevent background showing at mesh seams", 
+                 foreground="gray", font=("TkDefaultFont", 8)).grid(row=3, column=0, columnspan=3, sticky=tk.W, padx=(20, 5))
+        
         # === COLOR QUANTIZATION ===
         color_frame = ttk.LabelFrame(parent, text="Color Quantization (Phase 2)", padding="10")
         color_frame.grid(row=2, column=0, sticky=(tk.W, tk.E), pady=(0, 10))
@@ -694,6 +701,7 @@ class PixelatorGUI:
             'ao_color': self.hex_to_rgb(self.ao_color_var),
             'pixel_width': self.pixel_width_var.get(),
             'resample_mode': self.resample_var.get(),
+            'enable_greedy_expand': self.enable_greedy_expand_var.get(),
             'quantize_method': self.quantize_method_var.get(),
             'bits_per_channel': self.bits_per_channel_var.get(),
             'palette_colors': self.palette_colors_var.get(),

@@ -6,6 +6,7 @@ from PIL import Image, ImageFilter
 from typing import Tuple, Optional, List
 import os
 import random
+from scipy import ndimage
 from ao_baker import SurfaceEffectsBaker
 
 
@@ -80,6 +81,145 @@ class TexturePixelator:
             result = Image.fromarray(arr.astype(np.uint8), mode='RGB')
         
         return result
+    
+    def greedy_expand_pixels(self, image: Image.Image, background_color: Tuple[int, int, int] = None,
+                            iterations: int = 2, threshold: int = 10) -> Image.Image:
+        """
+        Expand non-background pixels outward to prevent background bleeding at seams.
+        Uses a "push-pull" inpainting algorithm commonly used in texture atlases.
+        
+        Args:
+            image: Input PIL Image
+            background_color: RGB tuple of background color to detect. If None, uses edge detection.
+            iterations: Number of expansion passes (more = thicker growth)
+            threshold: Color difference threshold for background detection (0-255)
+        
+        Returns:
+            Image with expanded foreground pixels
+        """
+        img_array = np.array(image)
+        has_alpha = len(img_array.shape) == 3 and img_array.shape[2] == 4
+        
+        if has_alpha:
+            # For images with alpha, expand based on alpha channel
+            rgb = img_array[:, :, :3].copy().astype(np.float32)
+            alpha = img_array[:, :, 3].astype(np.float32)
+            
+            # Pixels with low alpha are background
+            mask = alpha >= 128  # True = foreground, False = background
+            
+            # Iteratively fill background pixels with weighted average of foreground neighbors
+            for iteration in range(iterations):
+                # Create padded versions for neighbor sampling
+                mask_padded = np.pad(mask, 1, mode='edge')
+                rgb_padded = np.pad(rgb, ((1, 1), (1, 1), (0, 0)), mode='edge')
+                
+                # Find background pixels that have at least one foreground neighbor
+                background_pixels = ~mask
+                
+                # For each background pixel, compute weighted average of foreground neighbors
+                for y in range(rgb.shape[0]):
+                    for x in range(rgb.shape[1]):
+                        if not background_pixels[y, x]:
+                            continue
+                        
+                        # Sample 8 neighbors (3x3 window)
+                        neighbor_colors = []
+                        neighbor_weights = []
+                        
+                        for dy in [-1, 0, 1]:
+                            for dx in [-1, 0, 1]:
+                                if dx == 0 and dy == 0:
+                                    continue
+                                
+                                ny, nx = y + 1 + dy, x + 1 + dx
+                                if mask_padded[ny, nx]:  # If neighbor is foreground
+                                    neighbor_colors.append(rgb_padded[ny, nx])
+                                    # Weight by distance (closer neighbors have more influence)
+                                    dist = np.sqrt(dx*dx + dy*dy)
+                                    neighbor_weights.append(1.0 / dist)
+                        
+                        # If we have foreground neighbors, fill with weighted average
+                        if neighbor_colors:
+                            neighbor_colors = np.array(neighbor_colors)
+                            neighbor_weights = np.array(neighbor_weights)
+                            neighbor_weights /= neighbor_weights.sum()
+                            
+                            rgb[y, x] = np.sum(neighbor_colors * neighbor_weights[:, np.newaxis], axis=0)
+                            mask[y, x] = True  # Mark as filled for next iteration
+                            alpha[y, x] = 255
+            
+            result_array = np.dstack([rgb.astype(np.uint8), alpha.astype(np.uint8)])
+            return Image.fromarray(result_array, mode='RGBA')
+        
+        else:
+            # For RGB images, detect background color from edge pixels
+            if background_color is None:
+                # Sample all edge pixels (top, bottom, left, right edges)
+                h, w = img_array.shape[:2]
+                edge_pixels = []
+                
+                # Top and bottom edges
+                edge_pixels.extend([tuple(img_array[0, x]) for x in range(w)])
+                edge_pixels.extend([tuple(img_array[h-1, x]) for x in range(w)])
+                
+                # Left and right edges (excluding corners already sampled)
+                edge_pixels.extend([tuple(img_array[y, 0]) for y in range(1, h-1)])
+                edge_pixels.extend([tuple(img_array[y, w-1]) for y in range(1, h-1)])
+                
+                # Find most common color among edge pixels
+                from collections import Counter
+                color_counts = Counter(edge_pixels)
+                background_color = color_counts.most_common(1)[0][0]
+            
+            bg_array = np.array(background_color, dtype=np.float32)
+            rgb = img_array.copy().astype(np.float32)
+            
+            # Calculate color distance from background
+            color_diff = np.sqrt(np.sum((rgb - bg_array) ** 2, axis=2))
+            mask = color_diff >= threshold  # True = foreground, False = background
+            
+            # Iteratively fill background pixels with weighted average of foreground neighbors
+            for iteration in range(iterations):
+                # Create padded versions for neighbor sampling
+                mask_padded = np.pad(mask, 1, mode='edge')
+                rgb_padded = np.pad(rgb, ((1, 1), (1, 1), (0, 0)), mode='edge')
+                
+                # Find background pixels
+                background_pixels = ~mask
+                
+                # For each background pixel, compute weighted average of foreground neighbors
+                for y in range(rgb.shape[0]):
+                    for x in range(rgb.shape[1]):
+                        if not background_pixels[y, x]:
+                            continue
+                        
+                        # Sample 8 neighbors (3x3 window)
+                        neighbor_colors = []
+                        neighbor_weights = []
+                        
+                        for dy in [-1, 0, 1]:
+                            for dx in [-1, 0, 1]:
+                                if dx == 0 and dy == 0:
+                                    continue
+                                
+                                ny, nx = y + 1 + dy, x + 1 + dx
+                                if mask_padded[ny, nx]:  # If neighbor is foreground
+                                    neighbor_colors.append(rgb_padded[ny, nx])
+                                    # Weight by distance (closer neighbors have more influence)
+                                    dist = np.sqrt(dx*dx + dy*dy)
+                                    neighbor_weights.append(1.0 / dist)
+                        
+                        # If we have foreground neighbors, fill with weighted average
+                        if neighbor_colors:
+                            neighbor_colors = np.array(neighbor_colors)
+                            neighbor_weights = np.array(neighbor_weights)
+                            neighbor_weights /= neighbor_weights.sum()
+                            
+                            rgb[y, x] = np.sum(neighbor_colors * neighbor_weights[:, np.newaxis], axis=0)
+                            mask[y, x] = True  # Mark as filled for next iteration
+            
+            return Image.fromarray(rgb.astype(np.uint8), mode='RGB')
     
     def downsample_image(self, image: Image.Image, target_width: int, 
                         resample_mode: str = 'nearest') -> Image.Image:
@@ -237,6 +377,7 @@ class TexturePixelator:
                        ao_map_path: str = None,
                        pixel_width: int = 16,
                        resample_mode: str = 'nearest',
+                       enable_greedy_expand: bool = True,
                        quantize_method: str = 'bit_depth',
                        bits_per_channel: int = 5,
                        palette_colors: int = 16,
@@ -290,10 +431,11 @@ class TexturePixelator:
             if blur_amount > 0 or noise_amount > 0 or color_variation > 0:
                 image = self.preprocess_image(image, blur_amount, noise_amount, color_variation)
             
+            # Phase 2.5: Greedy expansion BEFORE downsampling (prevents background bleed)
+            if enable_greedy_expand:
+                image = self.greedy_expand_pixels(image, iterations=5, threshold=15)
+            
             # Phase 3: Pixelation
-            # Step 1: Downsample
-            image = self.downsample_image(image, pixel_width, resample_mode)
-            # Phase 2: Pixelation
             # Step 1: Downsample
             image = self.downsample_image(image, pixel_width, resample_mode)
             
