@@ -378,6 +378,7 @@ class TexturePixelator:
                        pixel_width: int = 16,
                        resample_mode: str = 'nearest',
                        enable_greedy_expand: bool = True,
+                       greedy_iterations: int = 5,
                        quantize_method: str = 'bit_depth',
                        bits_per_channel: int = 5,
                        palette_colors: int = 16,
@@ -433,7 +434,7 @@ class TexturePixelator:
             
             # Phase 2.5: Greedy expansion BEFORE downsampling (prevents background bleed)
             if enable_greedy_expand:
-                image = self.greedy_expand_pixels(image, iterations=5, threshold=15)
+                image = self.greedy_expand_pixels(image, iterations=greedy_iterations, threshold=15)
             
             # Phase 3: Pixelation
             # Step 1: Downsample

@@ -473,9 +473,22 @@ class PixelatorGUI:
         # Greedy expansion toggle
         self.enable_greedy_expand_var = tk.BooleanVar(value=True)
         ttk.Checkbutton(pixel_frame, text="Greedy Pixel Expansion (prevents background bleed at UV seams)", 
-                       variable=self.enable_greedy_expand_var).grid(row=2, column=0, columnspan=3, sticky=tk.W, pady=(10, 5))
+                       variable=self.enable_greedy_expand_var, command=self.on_greedy_toggle).grid(row=2, column=0, columnspan=3, sticky=tk.W, pady=(10, 5))
         ttk.Label(pixel_frame, text="Expands foreground pixels outward to prevent background showing at mesh seams", 
                  foreground="gray", font=("TkDefaultFont", 8)).grid(row=3, column=0, columnspan=3, sticky=tk.W, padx=(20, 5))
+        
+        # Greedy expansion strength
+        ttk.Label(pixel_frame, text="Expansion Strength:").grid(row=4, column=0, sticky=tk.W, pady=5, padx=(20, 0))
+        self.greedy_iterations_var = tk.IntVar(value=5)
+        self.greedy_slider = ttk.Scale(pixel_frame, from_=1, to=20, 
+                                       variable=self.greedy_iterations_var, orient=tk.HORIZONTAL, 
+                                       length=200)
+        self.greedy_slider.grid(row=4, column=1, sticky=tk.W, padx=5)
+        self.greedy_label = ttk.Label(pixel_frame, text="5")
+        self.greedy_label.grid(row=4, column=2, sticky=tk.W)
+        self.greedy_iterations_var.trace_add('write', self.update_greedy_label)
+        ttk.Label(pixel_frame, text="How many pixels outward to expand (1=thin, 20=thick)", 
+                 foreground="gray", font=("TkDefaultFont", 8)).grid(row=5, column=1, columnspan=2, sticky=tk.W, padx=5)
         
         # === COLOR QUANTIZATION ===
         color_frame = ttk.LabelFrame(parent, text="Color Quantization (Phase 2)", padding="10")
@@ -577,6 +590,15 @@ class PixelatorGUI:
     def update_ao_darken_label(self, *args):
         self.ao_darken_label.config(text=f"{self.ao_darken_var.get():.2f}")
         self.mark_modified()
+    
+    def update_greedy_label(self, *args):
+        self.greedy_label.config(text=f"{self.greedy_iterations_var.get()}")
+    
+    def on_greedy_toggle(self):
+        """Enable/disable greedy expansion slider"""
+        enabled = self.enable_greedy_expand_var.get()
+        state = "normal" if enabled else "disabled"
+        self.greedy_slider.config(state=state)
     
     def on_surface_toggle(self):
         """Enable/disable surface effect controls based on checkbox"""
@@ -702,6 +724,7 @@ class PixelatorGUI:
             'pixel_width': self.pixel_width_var.get(),
             'resample_mode': self.resample_var.get(),
             'enable_greedy_expand': self.enable_greedy_expand_var.get(),
+            'greedy_iterations': self.greedy_iterations_var.get(),
             'quantize_method': self.quantize_method_var.get(),
             'bits_per_channel': self.bits_per_channel_var.get(),
             'palette_colors': self.palette_colors_var.get(),
