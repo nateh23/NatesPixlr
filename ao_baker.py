@@ -6,17 +6,23 @@ from PIL import Image, ImageFilter
 import colorsys
 from pathlib import Path
 from scipy import ndimage
+import trimesh
+import subprocess
+import os
 
 
 class SurfaceEffectsBaker:
     """Handles AO baking from 3D models onto textures"""
     
     def __init__(self):
+        self.blender_path = "/Applications/Blender.app/Contents/MacOS/Blender"
+        self.blender_script = str(Path(__file__).parent / "blender_baker.py")
         self.mesh_loaded = False
         self.vertices = None
         self.uvs = None
         self.normals = None
         self.faces = None
+        self.trimesh_obj = None  # Store trimesh object for world-space baking
     
     def load_obj(self, obj_path: str) -> bool:
         """
@@ -66,6 +72,12 @@ class SurfaceEffectsBaker:
             self.faces = faces
             self.mesh_loaded = True
             
+            # Also load with trimesh for world-space operations
+            try:
+                self.trimesh_obj = trimesh.load_mesh(obj_path)
+            except:
+                self.trimesh_obj = None
+            
             return True
         except Exception as e:
             print(f"Error loading OBJ: {e}")
@@ -84,11 +96,12 @@ class SurfaceEffectsBaker:
             Curvature map as numpy array (-1 = concave/crevice, 0 = flat, +1 = convex/edge)
         """
         if not self.mesh_loaded or self.uvs is None or self.normals is None:
-            # Return neutral (flat) if no mesh
             return np.zeros((height, width), dtype=np.float32)
         
         # Create edge map by drawing lines along face boundaries
         edge_map = np.zeros((height, width), dtype=np.float32)
+        faces_drawn = 0
+        edges_drawn = 0
         
         # For each face, draw its edges in UV space
         for face in self.faces:
@@ -106,6 +119,8 @@ class SurfaceEffectsBaker:
             
             if len(uvs_face) < 3:
                 continue
+            
+            faces_drawn += 1
             
             # Get average normal for this face
             face_normal = np.mean(normals_face, axis=0)
@@ -127,10 +142,127 @@ class SurfaceEffectsBaker:
                 
                 # Draw line using Bresenham's algorithm
                 self._draw_line(edge_map, x0, y0, x1, y1, strength)
+                edges_drawn += 1
         
         # Apply Gaussian blur to spread edge influence
         if strength > 0:
             edge_map = ndimage.gaussian_filter(edge_map, sigma=3.0)
+        
+        return edge_map
+    
+    def compute_curvature_map_worldspace(self, width: int, height: int, strength: float = 5.0) -> np.ndarray:
+        """
+        Compute curvature map using world-space projection (no UVs needed!)
+        Projects mesh from 6 orthographic directions and detects edges from normal changes.
+        
+        Args:
+            width: Texture width
+            height: Texture height
+            strength: Edge detection sensitivity
+            
+        Returns:
+            Curvature map as numpy array
+        """
+        if not self.mesh_loaded or self.trimesh_obj is None:
+            print("ERROR: No trimesh mesh loaded")
+            return np.zeros((height, width), dtype=np.float32)
+        
+        print(f"Computing world-space curvature map...")
+        print(f"  Vertices: {len(self.trimesh_obj.vertices)}")
+        print(f"  Faces: {len(self.trimesh_obj.faces)}")
+        
+        # Get mesh bounds
+        bounds = self.trimesh_obj.bounds
+        mesh_size = bounds[1] - bounds[0]
+        max_dim = max(mesh_size)
+        
+        # Composite map from multiple angles
+        final_map = np.zeros((height, width), dtype=np.float32)
+        
+        # Project from 6 orthographic directions (top, bottom, left, right, front, back)
+        directions = [
+            ('Z+', [0, 0, 1]),   # Top view
+            ('Z-', [0, 0, -1]),  # Bottom view
+            ('Y+', [0, 1, 0]),   # Front view
+            ('Y-', [0, -1, 0]),  # Back view
+            ('X+', [1, 0, 0]),   # Right view
+            ('X-', [-1, 0, 0])   # Left view
+        ]
+        
+        for name, direction in directions:
+            # Create projection map for this direction
+            proj_map = self._project_curvature_from_direction(
+                direction, width, height, strength, max_dim
+            )
+            # Accumulate (use max to keep strongest edges)
+            final_map = np.maximum(final_map, proj_map)
+        
+        print(f"  World-space map range: {final_map.min():.3f} to {final_map.max():.3f}")
+        
+        return final_map
+    
+    def _project_curvature_from_direction(self, direction, width, height, strength, mesh_size):
+        """Project mesh from one direction and detect edges"""
+        direction = np.array(direction, dtype=np.float32)
+        direction = direction / np.linalg.norm(direction)
+        
+        # Get face normals
+        face_normals = self.trimesh_obj.face_normals
+        
+        # Only consider faces facing this direction (dot product > 0)
+        facing = np.dot(face_normals, direction) > 0.1
+        
+        # Create edge map
+        edge_map = np.zeros((height, width), dtype=np.float32)
+        
+        # Get mesh bounds for projection
+        bounds = self.trimesh_obj.bounds
+        center = (bounds[0] + bounds[1]) / 2
+        
+        # Determine which axes to use for projection based on direction
+        abs_dir = np.abs(direction)
+        main_axis = np.argmax(abs_dir)
+        
+        # Choose perpendicular axes for 2D projection
+        if main_axis == 0:  # X direction
+            axes = [1, 2]  # Y, Z
+        elif main_axis == 1:  # Y direction
+            axes = [0, 2]  # X, Z
+        else:  # Z direction
+            axes = [0, 1]  # X, Y
+        
+        # Project visible faces onto 2D plane
+        for face_idx, face in enumerate(self.trimesh_obj.faces):
+            if not facing[face_idx]:
+                continue
+            
+            # Get face vertices
+            verts = self.trimesh_obj.vertices[face]
+            
+            # Project to 2D
+            coords_2d = verts[:, axes]
+            
+            # Normalize to 0-1 range
+            min_vals = bounds[0][axes]
+            max_vals = bounds[1][axes]
+            range_vals = max_vals - min_vals
+            
+            if range_vals[0] > 1e-6 and range_vals[1] > 1e-6:
+                coords_norm = (coords_2d - min_vals) / range_vals
+                
+                # Convert to pixel coordinates
+                px = (coords_norm[:, 0] * (width - 1)).astype(int)
+                py = ((1 - coords_norm[:, 1]) * (height - 1)).astype(int)
+                
+                # Draw triangle edges
+                for i in range(3):
+                    x0, y0 = px[i], py[i]
+                    x1, y1 = px[(i + 1) % 3], py[(i + 1) % 3]
+                    self._draw_line(edge_map, x0, y0, x1, y1, strength)
+        
+        # Apply Gaussian blur
+        if edge_map.max() > 0:
+            edge_map = ndimage.gaussian_filter(edge_map, sigma=2.0)
         
         return edge_map
     
@@ -187,113 +319,70 @@ class SurfaceEffectsBaker:
     def compute_ao_map(self, width: int, height: int, samples: int = 32, 
                       distance: float = 0.5) -> np.ndarray:
         """
-        Compute AO map by raycasting from surface
+        Compute AO map from negative curvature (concave areas) using WORLD-SPACE projection
         
         Args:
             width: Texture width
             height: Texture height
-            samples: Number of AO samples per pixel
-            distance: Maximum ray distance
+            samples: Unused
+            distance: Unused
             
         Returns:
-            AO map as numpy array (0 = fully occluded, 1 = no occlusion)
+            AO map as numpy array (0 = fully occluded/dark, 1 = no occlusion/bright)
         """
-        if not self.mesh_loaded or self.uvs is None:
-            # Return white (no occlusion) if no mesh
+        if not self.mesh_loaded or self.trimesh_obj is None:
+            print("ERROR: No mesh loaded for AO baking")
             return np.ones((height, width), dtype=np.float32)
         
-        # Create AO map
-        ao_map = np.zeros((height, width), dtype=np.float32)
-        sample_count = np.zeros((height, width), dtype=np.int32)
+        print(f"Computing AO map from world-space curvature: {len(self.vertices)} vertices, {len(self.faces)} faces")
         
-        # For each face, rasterize and compute AO
-        for face in self.faces:
-            if len(face) < 3:
-                continue
-            
-            # Get UV coordinates for this face
-            uvs_face = []
-            positions_face = []
-            normals_face = []
-            
-            for v_idx, vt_idx, vn_idx in face:
-                if vt_idx is not None:
-                    uvs_face.append(self.uvs[vt_idx])
-                    positions_face.append(self.vertices[v_idx])
-                    if vn_idx is not None and self.normals is not None:
-                        normals_face.append(self.normals[vn_idx])
-            
-            if len(uvs_face) < 3:
-                continue
-            
-            # Simple rasterization: sample in triangle
-            # Convert UV to pixel coordinates
-            uv0, uv1, uv2 = uvs_face[0], uvs_face[1], uvs_face[2]
-            
-            # Get bounding box in texture space
-            min_u = max(0, min(uv0[0], uv1[0], uv2[0]))
-            max_u = min(1, max(uv0[0], uv1[0], uv2[0]))
-            min_v = max(0, min(uv0[1], uv1[1], uv2[1]))
-            max_v = min(1, max(uv0[1], uv1[1], uv2[1]))
-            
-            min_x = int(min_u * width)
-            max_x = min(width - 1, int(max_u * width))
-            min_y = int((1 - max_v) * height)  # Flip V
-            max_y = min(height - 1, int((1 - min_v) * height))
-            
-            # Sample pixels in bounding box
-            for y in range(min_y, max_y + 1):
-                for x in range(min_x, max_x + 1):
-                    u = x / width
-                    v = 1 - (y / height)  # Flip V
-                    
-                    # Check if point is inside triangle (barycentric)
-                    if self._point_in_triangle(u, v, uv0, uv1, uv2):
-                        # Compute simple AO: average of hemisphere samples
-                        # For now, use a simple falloff based on distance to center
-                        # Real AO would raycast, but that's expensive
-                        ao_value = self._compute_simple_ao(samples, distance)
-                        ao_map[y, x] += ao_value
-                        sample_count[y, x] += 1
+        # Always use world-space curvature for AO
+        curvature_map = self.compute_curvature_map_worldspace(width, height, strength=5.0)
         
-        # Average samples
-        mask = sample_count > 0
-        ao_map[mask] /= sample_count[mask]
+        # Extract negative curvature (concave/crevice areas)
+        # Positive = convex/edges (ignore), Negative = concave/crevices (use for AO)
+        ao_map = np.maximum(0, -curvature_map)  # Flip and clamp
         
-        # Fill in unmapped areas with full brightness
-        ao_map[~mask] = 1.0
+        # Normalize to 0-1 range
+        if ao_map.max() > 0:
+            ao_map = ao_map / ao_map.max()
+        
+        print(f"AO from curvature range: {ao_map.min():.3f} to {ao_map.max():.3f}")
+        
+        # Invert so 1=bright, 0=dark
+        ao_map = 1.0 - ao_map
+        
+        # Apply blur for smoothness
+        ao_map = ndimage.gaussian_filter(ao_map, sigma=3.0)
+        
+        print(f"Final AO map range: {ao_map.min():.3f} to {ao_map.max():.3f}")
         
         return ao_map
     
-    def _point_in_triangle(self, px, py, p0, p1, p2):
-        """Check if point (px, py) is inside triangle defined by p0, p1, p2"""
-        def sign(p1, p2, p3):
-            return (p1[0] - p3[0]) * (p2[1] - p3[1]) - (p2[0] - p3[0]) * (p1[1] - p3[1])
+    def _barycentric(self, px, py, p0, p1, p2):
+        """Compute barycentric coordinates, return None if outside triangle"""
+        v0 = np.array([p2[0] - p0[0], p2[1] - p0[1]])
+        v1 = np.array([p1[0] - p0[0], p1[1] - p0[1]])
+        v2 = np.array([px - p0[0], py - p0[1]])
         
-        d1 = sign((px, py), p0, p1)
-        d2 = sign((px, py), p1, p2)
-        d3 = sign((px, py), p2, p0)
+        d00 = np.dot(v0, v0)
+        d01 = np.dot(v0, v1)
+        d11 = np.dot(v1, v1)
+        d20 = np.dot(v2, v0)
+        d21 = np.dot(v2, v1)
         
-        has_neg = (d1 < 0) or (d2 < 0) or (d3 < 0)
-        has_pos = (d1 > 0) or (d2 > 0) or (d3 > 0)
+        denom = d00 * d11 - d01 * d01
+        if abs(denom) < 1e-8:
+            return None
+            
+        v = (d11 * d20 - d01 * d21) / denom
+        w = (d00 * d21 - d01 * d20) / denom
+        u = 1.0 - v - w
         
-        return not (has_neg and has_pos)
-    
-    def _compute_simple_ao(self, samples: int, distance: float) -> float:
-        """
-        Compute simple AO value using random hemisphere sampling
-        This is a simplified version - real AO would do actual raycasting
-        """
-        # For now, return a random occlusion factor
-        # In a real implementation, this would raycast in hemisphere
-        occlusion = 0.0
-        for _ in range(samples):
-            # Random hemisphere direction
-            # Check if ray hits geometry within distance
-            # For simplified version, use random occlusion
-            occlusion += np.random.uniform(0.0, 0.3)  # Simulate some occlusion
-        
-        return 1.0 - (occlusion / samples)
+        # Check if inside triangle
+        if u >= -0.001 and v >= -0.001 and w >= -0.001:
+            return (u, v, w)
+        return None
     
     def apply_surface_effects_to_texture(self, img: Image.Image,
                                         edge_highlight: float = 0.3,
@@ -383,85 +472,102 @@ class SurfaceEffectsBaker:
         return Image.fromarray(img_array)
     
     def bake_curvature_map(self, model_path: str, output_path: str, 
-                          resolution: int = 1024, strength: float = 5.0) -> bool:
+                          resolution: int = 1024, strength: float = 5.0,
+                          use_worldspace: bool = True) -> bool:
         """
         Bake curvature map from 3D model to a PNG file (edges only)
+        Uses Blender for proper normal map baking
         
         Args:
             model_path: Path to 3D model file
             output_path: Path to save curvature map PNG
             resolution: Map resolution (width, height will match aspect)
-            strength: Curvature detection strength
+            strength: Curvature detection strength (unused with Blender)
+            use_worldspace: Unused, Blender handles this automatically
             
         Returns:
             True if successful
         """
         try:
-            # Load model
-            if Path(model_path).suffix.lower() == '.obj':
-                if not self.load_obj(model_path):
-                    print("Failed to load model")
-                    return False
-            else:
-                print(f"Unsupported model format: {Path(model_path).suffix}")
+            if not os.path.exists(self.blender_path):
+                print(f"Blender not found at: {self.blender_path}")
                 return False
             
-            # Compute curvature map
-            curvature_map = self.compute_curvature_map(resolution, resolution, strength)
+            print(f"Baking edge map with Blender...")
             
-            # Normalize to 0-255 range (positive values only, edges)
-            curvature_map = np.maximum(0, curvature_map)  # Only positive curvature
-            curvature_map = np.clip(curvature_map * 255, 0, 255).astype(np.uint8)
+            # Call Blender to bake normal map
+            cmd = [
+                self.blender_path,
+                "--background",
+                "--python", self.blender_script,
+                "--",
+                "edge",
+                model_path,
+                output_path,
+                str(resolution)
+            ]
             
-            # Save as grayscale PNG
-            img = Image.fromarray(curvature_map, mode='L')
-            img.save(output_path)
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
             
-            print(f"Curvature map saved to: {output_path}")
-            return True
+            if result.returncode == 0 and os.path.exists(output_path):
+                print(f"Edge map saved to: {output_path}")
+                return True
+            else:
+                print(f"Blender baking failed:")
+                print(result.stderr)
+                return False
             
         except Exception as e:
-            print(f"Error baking curvature map: {e}")
+            print(f"Error baking edge map: {e}")
             return False
     
     def bake_ao_map(self, model_path: str, output_path: str,
                     resolution: int = 1024, samples: int = 32, 
-                    distance: float = 0.5) -> bool:
+                    distance: float = 0.5, use_worldspace: bool = True) -> bool:
         """
         Bake ambient occlusion map from 3D model to a PNG file (crevices)
+        Uses Blender for proper AO baking
         
         Args:
             model_path: Path to 3D model file
             output_path: Path to save AO map PNG
             resolution: Map resolution
             samples: Number of AO ray samples
-            distance: Ray distance for AO calculation
+            distance: Ray distance for AO calculation (unused with Blender)
+            use_worldspace: Unused, Blender handles this automatically
             
         Returns:
             True if successful
         """
         try:
-            # Load model
-            if Path(model_path).suffix.lower() == '.obj':
-                if not self.load_obj(model_path):
-                    print("Failed to load model")
-                    return False
-            else:
-                print(f"Unsupported model format: {Path(model_path).suffix}")
+            if not os.path.exists(self.blender_path):
+                print(f"Blender not found at: {self.blender_path}")
                 return False
             
-            # Compute AO map
-            ao_map = self.compute_ao_map(resolution, resolution, samples, distance)
+            print(f"Baking AO map with Blender...")
             
-            # Normalize to 0-255 (0=fully occluded/dark, 255=fully lit/bright)
-            ao_map = np.clip(ao_map * 255, 0, 255).astype(np.uint8)
+            # Call Blender to bake AO
+            cmd = [
+                self.blender_path,
+                "--background",
+                "--python", self.blender_script,
+                "--",
+                "ao",
+                model_path,
+                output_path,
+                str(resolution),
+                str(samples)
+            ]
             
-            # Save as grayscale PNG
-            img = Image.fromarray(ao_map, mode='L')
-            img.save(output_path)
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
             
-            print(f"AO map saved to: {output_path}")
-            return True
+            if result.returncode == 0 and os.path.exists(output_path):
+                print(f"AO map saved to: {output_path}")
+                return True
+            else:
+                print(f"Blender baking failed:")
+                print(result.stderr)
+                return False
             
         except Exception as e:
             print(f"Error baking AO map: {e}")
