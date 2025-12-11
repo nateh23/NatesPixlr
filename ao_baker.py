@@ -386,6 +386,7 @@ class SurfaceEffectsBaker:
     
     def apply_surface_effects_to_texture(self, img: Image.Image,
                                         edge_highlight: float = 0.3,
+                                        edge_saturation: float = 0.0,
                                         edge_color: tuple = (255, 136, 0),
                                         edge_map_path: str = None,
                                         edge_blend: float = 0.7,
@@ -400,6 +401,7 @@ class SurfaceEffectsBaker:
         Args:
             img: Input texture image
             edge_highlight: Brightness boost on edges (0-1)
+            edge_saturation: Saturation adjustment at edges (-1 to 1)
             edge_color: RGB tuple (0-255) to blend onto edges
             edge_map_path: Path to pre-baked edge map (REQUIRED)
             edge_blend: Strength of edge color blending (0-1)
@@ -460,6 +462,19 @@ class SurfaceEffectsBaker:
                     img_array[:, :, c] += edge_highlight * edge_mask * 255
                 
                 img_array = np.clip(img_array, 0, 255)
+                
+                # Apply saturation adjustment at edges
+                if edge_saturation != 0.0:
+                    import colorsys
+                    for y in range(height):
+                        for x in range(width):
+                            if edge_mask[y, x] > 0.01:  # Only process edge pixels
+                                r, g, b = img_array[y, x] / 255.0
+                                h, s, v = colorsys.rgb_to_hsv(r, g, b)
+                                # Adjust saturation (clamp to 0-1)
+                                s = np.clip(s + edge_saturation * edge_mask[y, x], 0.0, 1.0)
+                                r, g, b = colorsys.hsv_to_rgb(h, s, v)
+                                img_array[y, x] = [r * 255, g * 255, b * 255]
                 
                 # Mask edge color onto edges
                 # Where edge_mask=1 (white), blend in edge_color

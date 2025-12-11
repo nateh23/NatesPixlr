@@ -46,7 +46,11 @@ class TexturePixelator:
         self.surface_baker = SurfaceEffectsBaker()
     
     def preprocess_image(self, img: Image.Image, blur_amount: float = 0.0, 
-                        noise_amount: float = 0.0, color_variation: float = 0.0) -> Image.Image:
+                        noise_amount: float = 0.0, color_variation: float = 0.0,
+                        flood_fill_color: Tuple[int, int, int] = (255, 255, 255),
+                        flood_fill_opacity: float = 0.0,
+                        hue_shift: float = 0.0,
+                        tint_strength: float = 0.0) -> Image.Image:
         """
         Apply preprocessing effects to add complexity before pixelation
         
@@ -55,6 +59,10 @@ class TexturePixelator:
             blur_amount: Gaussian blur radius (0 = no blur)
             noise_amount: Random noise intensity (0-50)
             color_variation: Random hue/saturation shift amount (0-30)
+            flood_fill_color: RGB color for flood fill overlay
+            flood_fill_opacity: Opacity of flood fill (0-1)
+            hue_shift: Hue rotation in degrees (-180 to 180)
+            tint_strength: How much to tint toward flood_fill_color (0-1)
         
         Returns:
             Preprocessed image
@@ -79,6 +87,39 @@ class TexturePixelator:
             shift = np.random.uniform(-color_variation, color_variation, arr.shape)
             arr = np.clip(arr + shift, 0, 255)
             result = Image.fromarray(arr.astype(np.uint8), mode='RGB')
+        
+        # Apply hue shift
+        if hue_shift != 0.0 and result.mode == 'RGB':
+            import colorsys
+            arr = np.array(result, dtype=np.float32) / 255.0
+            h, w = arr.shape[:2]
+            
+            for y in range(h):
+                for x in range(w):
+                    r, g, b = arr[y, x]
+                    h_val, s, v = colorsys.rgb_to_hsv(r, g, b)
+                    # Shift hue (wrap around at 1.0)
+                    h_val = (h_val + hue_shift / 360.0) % 1.0
+                    r, g, b = colorsys.hsv_to_rgb(h_val, s, v)
+                    arr[y, x] = [r, g, b]
+            
+            result = Image.fromarray((arr * 255).astype(np.uint8), mode='RGB')
+        
+        # Apply tint toward flood fill color
+        if tint_strength > 0.0 and result.mode == 'RGB':
+            arr = np.array(result, dtype=np.float32)
+            tint_color = np.array(flood_fill_color, dtype=np.float32)
+            # Blend toward tint color
+            arr = arr * (1.0 - tint_strength) + tint_color * tint_strength
+            result = Image.fromarray(np.clip(arr, 0, 255).astype(np.uint8), mode='RGB')
+        
+        # Apply flood fill overlay
+        if flood_fill_opacity > 0.0 and result.mode == 'RGB':
+            arr = np.array(result, dtype=np.float32)
+            overlay_color = np.array(flood_fill_color, dtype=np.float32)
+            # Blend with flood fill color
+            arr = arr * (1.0 - flood_fill_opacity) + overlay_color * flood_fill_opacity
+            result = Image.fromarray(np.clip(arr, 0, 255).astype(np.uint8), mode='RGB')
         
         return result
     
@@ -362,10 +403,15 @@ class TexturePixelator:
                        blur_amount: float = 0.0,
                        noise_amount: float = 0.0,
                        color_variation: float = 0.0,
+                       flood_fill_color: tuple = (255, 255, 255),
+                       flood_fill_opacity: float = 0.0,
+                       hue_shift: float = 0.0,
+                       tint_strength: float = 0.0,
                        enable_surface: bool = False,
                        model_path: str = None,
                        curvature_strength: float = 0.5,
                        edge_highlight: float = 0.3,
+                       edge_saturation: float = 0.0,
                        edge_blend: float = 0.7,
                        enable_edge: bool = True,
                        ao_darken: float = 0.5,
@@ -424,13 +470,14 @@ class TexturePixelator:
             if enable_surface and baked_map_path:
                 print("Applying surface effects from baked maps...")
                 image = self.surface_baker.apply_surface_effects_to_texture(
-                    image, edge_highlight, edge_color, baked_map_path, edge_blend, enable_edge,
+                    image, edge_highlight, edge_saturation, edge_color, baked_map_path, edge_blend, enable_edge,
                     ao_darken, ao_color, ao_map_path, ao_blend, enable_ao
                 )
             
             # Phase 2: Preprocessing
-            if blur_amount > 0 or noise_amount > 0 or color_variation > 0:
-                image = self.preprocess_image(image, blur_amount, noise_amount, color_variation)
+            if blur_amount > 0 or noise_amount > 0 or color_variation > 0 or flood_fill_opacity > 0 or hue_shift != 0 or tint_strength > 0:
+                image = self.preprocess_image(image, blur_amount, noise_amount, color_variation,
+                                             flood_fill_color, flood_fill_opacity, hue_shift, tint_strength)
             
             # Phase 2.5: Greedy expansion BEFORE downsampling (prevents background bleed)
             if enable_greedy_expand:

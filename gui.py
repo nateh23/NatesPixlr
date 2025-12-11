@@ -251,6 +251,54 @@ class PixelatorGUI:
         self.color_var_var.trace_add('write', self.update_color_var_label)
         ttk.Label(prep_frame, text="Randomly shifts hue/saturation slightly", 
                  foreground="gray", font=("TkDefaultFont", 8)).grid(row=6, column=1, sticky=tk.W, padx=5)
+        
+        # Flood fill color overlay
+        ttk.Label(prep_frame, text="Flood Fill Color:").grid(row=7, column=0, sticky=tk.W, pady=5)
+        self.flood_fill_var = tk.StringVar(value="#FFFFFF")
+        self.flood_fill_canvas = tk.Canvas(prep_frame, width=30, height=30, 
+                                           highlightthickness=1, highlightbackground="#999", cursor="hand2")
+        self.flood_fill_canvas.grid(row=7, column=1, sticky=tk.W, padx=5)
+        self.flood_fill_canvas.bind("<Button-1>", lambda e: self.pick_flood_fill_color())
+        self.flood_fill_circle = self.flood_fill_canvas.create_oval(2, 2, 28, 28, 
+                                                                     fill=self.flood_fill_var.get(), outline="#666", width=2)
+        ttk.Label(prep_frame, text="Color to overlay on entire image", 
+                 foreground="gray", font=("TkDefaultFont", 8)).grid(row=8, column=1, sticky=tk.W, padx=5)
+        
+        # Flood fill opacity
+        ttk.Label(prep_frame, text="Flood Fill Opacity:").grid(row=9, column=0, sticky=tk.W, pady=5)
+        self.flood_fill_opacity_var = tk.DoubleVar(value=0.0)
+        flood_opacity_scale = ttk.Scale(prep_frame, from_=0.0, to=1.0, variable=self.flood_fill_opacity_var, 
+                                        orient=tk.HORIZONTAL, length=200)
+        flood_opacity_scale.grid(row=9, column=1, sticky=tk.W, padx=5)
+        self.flood_opacity_label = ttk.Label(prep_frame, text="0.00")
+        self.flood_opacity_label.grid(row=9, column=2, sticky=tk.W)
+        self.flood_fill_opacity_var.trace_add('write', self.update_flood_opacity_label)
+        ttk.Label(prep_frame, text="0 = none, 1 = full color overlay", 
+                 foreground="gray", font=("TkDefaultFont", 8)).grid(row=10, column=1, sticky=tk.W, padx=5)
+        
+        # Hue shift
+        ttk.Label(prep_frame, text="Hue Shift:").grid(row=11, column=0, sticky=tk.W, pady=5)
+        self.hue_shift_var = tk.DoubleVar(value=0.0)
+        hue_shift_scale = ttk.Scale(prep_frame, from_=-180.0, to=180.0, variable=self.hue_shift_var, 
+                                    orient=tk.HORIZONTAL, length=200)
+        hue_shift_scale.grid(row=11, column=1, sticky=tk.W, padx=5)
+        self.hue_shift_label = ttk.Label(prep_frame, text="0")
+        self.hue_shift_label.grid(row=11, column=2, sticky=tk.W)
+        self.hue_shift_var.trace_add('write', self.update_hue_shift_label)
+        ttk.Label(prep_frame, text="Rotate hue around color wheel (-180 to 180)", 
+                 foreground="gray", font=("TkDefaultFont", 8)).grid(row=12, column=1, sticky=tk.W, padx=5)
+        
+        # Tint strength
+        ttk.Label(prep_frame, text="Tint Strength:").grid(row=13, column=0, sticky=tk.W, pady=5)
+        self.tint_strength_var = tk.DoubleVar(value=0.0)
+        tint_strength_scale = ttk.Scale(prep_frame, from_=0.0, to=1.0, variable=self.tint_strength_var, 
+                                        orient=tk.HORIZONTAL, length=200)
+        tint_strength_scale.grid(row=13, column=1, sticky=tk.W, padx=5)
+        self.tint_strength_label = ttk.Label(prep_frame, text="0.00")
+        self.tint_strength_label.grid(row=13, column=2, sticky=tk.W)
+        self.tint_strength_var.trace_add('write', self.update_tint_strength_label)
+        ttk.Label(prep_frame, text="Push colors toward flood fill color (0=none, 1=full)", 
+                 foreground="gray", font=("TkDefaultFont", 8)).grid(row=14, column=1, sticky=tk.W, padx=5)
     
     def setup_surface_tab(self, parent):
         """Setup Surface Effects tab (curvature + AO)"""
@@ -313,6 +361,19 @@ class PixelatorGUI:
         self.edge_highlight_var.trace_add('write', self.update_edge_highlight_label)
         ttk.Label(curv_frame, text="Brighten convex edges/ridges (0 = none, 1 = white)", 
                  foreground="gray", font=("TkDefaultFont", 8)).grid(row=4, column=1, sticky=tk.W, padx=5)
+        
+        # Edge Saturation
+        ttk.Label(curv_frame, text="Edge Saturation:").grid(row=5, column=0, sticky=tk.W, pady=5)
+        self.edge_saturation_var = tk.DoubleVar(value=0.0)
+        self.edge_saturation_scale = ttk.Scale(curv_frame, from_=-1.0, to=1.0, 
+                                               variable=self.edge_saturation_var, orient=tk.HORIZONTAL, 
+                                               length=200, state="disabled")
+        self.edge_saturation_scale.grid(row=5, column=1, sticky=tk.W, padx=5)
+        self.edge_saturation_label = ttk.Label(curv_frame, text="0.00")
+        self.edge_saturation_label.grid(row=5, column=2, sticky=tk.W)
+        self.edge_saturation_var.trace_add('write', self.update_edge_saturation_label)
+        ttk.Label(curv_frame, text="Boost saturation at edges (-1 = desaturate, 1 = boost)", 
+                 foreground="gray", font=("TkDefaultFont", 8)).grid(row=6, column=1, sticky=tk.W, padx=5)
         
         # === COLOR TINTING ===
         tint_frame = ttk.LabelFrame(parent, text="Edge Color Tinting", padding="10")
@@ -438,7 +499,7 @@ class PixelatorGUI:
         # Store references for enable/disable
         self.surface_widgets = {
             'scales': [
-                self.curv_strength_scale, self.edge_highlight_scale, self.ao_darken_scale
+                self.curv_strength_scale, self.edge_highlight_scale, self.edge_saturation_scale, self.ao_darken_scale
             ],
             'canvases': [self.edge_color_canvas, self.ao_color_canvas],
             'buttons': [self.bake_edge_button, self.bake_ao_button]
@@ -574,6 +635,15 @@ class PixelatorGUI:
     def update_color_var_label(self, *args):
         self.color_var_label.config(text=f"{self.color_var_var.get():.1f}")
     
+    def update_flood_opacity_label(self, *args):
+        self.flood_opacity_label.config(text=f"{self.flood_fill_opacity_var.get():.2f}")
+    
+    def update_hue_shift_label(self, *args):
+        self.hue_shift_label.config(text=f"{int(self.hue_shift_var.get())}")
+    
+    def update_tint_strength_label(self, *args):
+        self.tint_strength_label.config(text=f"{self.tint_strength_var.get():.2f}")
+    
     def update_curv_strength_label(self, *args):
         self.curv_strength_label.config(text=f"{self.curv_strength_var.get():.2f}")
     
@@ -585,6 +655,10 @@ class PixelatorGUI:
     
     def update_edge_highlight_label(self, *args):
         self.edge_highlight_label.config(text=f"{self.edge_highlight_var.get():.2f}")
+        self.mark_modified()
+    
+    def update_edge_saturation_label(self, *args):
+        self.edge_saturation_label.config(text=f"{self.edge_saturation_var.get():.2f}")
         self.mark_modified()
     
     def update_ao_darken_label(self, *args):
@@ -710,11 +784,16 @@ class PixelatorGUI:
             'blur_amount': self.blur_amount_var.get(),
             'noise_amount': self.noise_amount_var.get(),
             'color_variation': self.color_var_var.get(),
+            'flood_fill_color': self.hex_to_rgb(self.flood_fill_var.get()),
+            'flood_fill_opacity': self.flood_fill_opacity_var.get(),
+            'hue_shift': self.hue_shift_var.get(),
+            'tint_strength': self.tint_strength_var.get(),
             'enable_surface': self.enable_surface_var.get(),
             'model_path': self.model_path_var.get() if self.enable_surface_var.get() else None,
             'curvature_strength': self.curv_strength_var.get(),
             'enable_edge': self.enable_edge_var.get(),
             'edge_highlight': self.edge_highlight_var.get(),
+            'edge_saturation': self.edge_saturation_var.get(),
             'edge_blend': self.edge_blend_var.get(),
             'enable_ao': self.enable_ao_var.get(),
             'ao_darken': self.ao_darken_var.get(),
@@ -1155,6 +1234,17 @@ class PixelatorGUI:
         if color[1]:  # color[1] is the hex string
             self.ao_color_var = color[1]
             self.ao_color_canvas.itemconfig(self.ao_color_circle, fill=color[1])
+            self.mark_modified()
+    
+    def pick_flood_fill_color(self):
+        """Open color picker for flood fill color"""
+        color = colorchooser.askcolor(
+            title="Choose Flood Fill Color",
+            initialcolor=self.flood_fill_var.get()
+        )
+        if color[1]:  # color[1] is the hex string
+            self.flood_fill_var.set(color[1])
+            self.flood_fill_canvas.itemconfig(self.flood_fill_circle, fill=color[1])
             self.mark_modified()
     
     def hex_to_rgb(self, hex_color):
