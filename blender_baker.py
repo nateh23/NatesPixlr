@@ -142,7 +142,7 @@ def bake_ao_map(obj_path, output_path, resolution, samples=32):
     bpy.context.scene.render.engine = 'CYCLES'
     bpy.context.scene.cycles.samples = samples
     bpy.context.scene.render.bake.use_selected_to_active = False
-    bpy.context.scene.render.bake.margin = 16  # Margin for bleeding
+    bpy.context.scene.render.bake.margin = 5  # No margin to match UV boundaries exactly
     
     # Recalculate normals and smooth shading for better AO
     bpy.ops.object.mode_set(mode='EDIT')
@@ -151,8 +151,7 @@ def bake_ao_map(obj_path, output_path, resolution, samples=32):
     bpy.ops.object.mode_set(mode='OBJECT')
     bpy.ops.object.shade_smooth()
     
-    # Optionally add ground plane for better AO occlusion
-    # (Remove if you want only self-occlusion)
+    # Add ground plane for better AO occlusion
     bpy.ops.mesh.primitive_plane_add(size=20, location=(0, 0, -2))
     
     # Re-select the original object for baking
@@ -176,9 +175,10 @@ def bake_ao_map(obj_path, output_path, resolution, samples=32):
         world_tree.links.new(bg_node.outputs[0], output_node.inputs[0])
     
     # CRITICAL FIX: Bake with AO type
+    # Use margin=0 to prevent white bleeding beyond UV boundaries
     bpy.ops.object.bake(
         type='AO',
-        margin=16,
+        margin=0,
         use_clear=True,
         use_selected_to_active=False,
         use_cage=False

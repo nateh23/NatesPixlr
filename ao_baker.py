@@ -433,6 +433,10 @@ class SurfaceEffectsBaker:
                 # Invert: 0=bright (no occlusion), 1=dark (full occlusion in crevices)
                 crevice_mask = 1.0 - ao_map
                 
+                # CRITICAL: Ignore pure black areas (0) in AO map - these are outside the UV bounds
+                # Only apply AO where ao_map > 0 (has some brightness)
+                valid_ao_mask = ao_map > 0.0  # True where AO has data, False where pure black
+                
                 # Mask AO color into crevices
                 # Where crevice_mask=1 (black in AO map), use pure ao_color
                 # Where crevice_mask=0 (white in AO map), keep original image
@@ -441,8 +445,11 @@ class SurfaceEffectsBaker:
                 for c in range(3):
                     # Darken based on ao_darken, then blend color based on ao_blend
                     darkened = img_array[:, :, c] * (1.0 - crevice_mask * ao_darken)
-                    img_array[:, :, c] = darkened * (1.0 - crevice_mask * ao_blend) + \
-                                        ao_color_array[c] * crevice_mask * ao_blend
+                    blended = darkened * (1.0 - crevice_mask * ao_blend) + \
+                             ao_color_array[c] * crevice_mask * ao_blend
+                    
+                    # Only apply AO where valid_ao_mask is True, keep original elsewhere
+                    img_array[:, :, c] = np.where(valid_ao_mask, blended, img_array[:, :, c])
                 
             except Exception as e:
                 print(f"Failed to load AO map: {e}")
