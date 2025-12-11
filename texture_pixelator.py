@@ -226,7 +226,11 @@ class TexturePixelator:
                        model_path: str = None,
                        curvature_strength: float = 0.5,
                        edge_highlight: float = 0.3,
+                       edge_blend: float = 0.7,
+                       enable_edge: bool = True,
                        ao_darken: float = 0.5,
+                       ao_blend: float = 0.5,
+                       enable_ao: bool = True,
                        edge_color: tuple = (255, 136, 0),
                        ao_color: tuple = (50, 30, 20),
                        baked_map_path: str = None,
@@ -278,8 +282,8 @@ class TexturePixelator:
             if enable_surface and baked_map_path:
                 print("Applying surface effects from baked maps...")
                 image = self.surface_baker.apply_surface_effects_to_texture(
-                    image, edge_highlight, edge_color, baked_map_path,
-                    ao_darken, ao_color, ao_map_path
+                    image, edge_highlight, edge_color, baked_map_path, edge_blend, enable_edge,
+                    ao_darken, ao_color, ao_map_path, ao_blend, enable_ao
                 )
             
             # Phase 2: Preprocessing

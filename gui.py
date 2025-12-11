@@ -318,45 +318,66 @@ class PixelatorGUI:
         tint_frame = ttk.LabelFrame(parent, text="Edge Color Tinting", padding="10")
         tint_frame.grid(row=3, column=0, sticky=(tk.W, tk.E), pady=(0, 10))
         
+        # Enable Edge checkbox
+        self.enable_edge_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(tint_frame, text="Enable Edge Effects", variable=self.enable_edge_var).grid(row=0, column=0, columnspan=3, sticky=tk.W, pady=(0, 5))
+        
         ttk.Label(tint_frame, text="Blend custom color onto edges (requires baked edge map)", 
-                 foreground="gray", font=("TkDefaultFont", 9, "italic")).grid(row=0, column=0, columnspan=3, sticky=tk.W, pady=(0, 10))
+                 foreground="gray", font=("TkDefaultFont", 9, "italic")).grid(row=1, column=0, columnspan=3, sticky=tk.W, pady=(0, 10))
         
         # Edge Color Picker
-        ttk.Label(tint_frame, text="Edge Color:").grid(row=1, column=0, sticky=tk.W, pady=5)
+        ttk.Label(tint_frame, text="Edge Color:").grid(row=2, column=0, sticky=tk.W, pady=5)
         
         # Create canvas for circular color indicator
         self.edge_color_canvas = tk.Canvas(tint_frame, width=30, height=30, 
                                           highlightthickness=1, highlightbackground="#999", cursor="")
-        self.edge_color_canvas.grid(row=1, column=1, sticky=tk.W, padx=5)
+        self.edge_color_canvas.grid(row=2, column=1, sticky=tk.W, padx=5)
         self.edge_color_canvas.bind("<Button-1>", lambda e: self.pick_edge_color())
         self.edge_color_circle = self.edge_color_canvas.create_oval(2, 2, 28, 28, 
                                                                     fill=self.edge_color_var, outline="#666", width=2)
         
         ttk.Label(tint_frame, text="Color to blend onto convex edges/ridges", 
-                 foreground="gray", font=("TkDefaultFont", 8)).grid(row=2, column=1, sticky=tk.W, padx=5)
+                 foreground="gray", font=("TkDefaultFont", 8)).grid(row=3, column=1, sticky=tk.W, padx=5)
+        
+        # Edge Color Blend Strength
+        ttk.Label(tint_frame, text="Edge Color Blend:").grid(row=4, column=0, sticky=tk.W, pady=5)
+        self.edge_blend_var = tk.DoubleVar(value=0.7)
+        self.edge_blend_scale = ttk.Scale(tint_frame, from_=0.0, to=1.0, 
+                                         variable=self.edge_blend_var, orient=tk.HORIZONTAL, 
+                                         length=200, state="disabled")
+        self.edge_blend_scale.grid(row=3, column=1, sticky=tk.W, padx=5)
+        self.edge_blend_label = ttk.Label(tint_frame, text="0.70")
+        self.edge_blend_label.grid(row=3, column=2, sticky=tk.W)
+        self.edge_blend_var.trace_add('write', self.update_edge_blend_label)
+        ttk.Label(tint_frame, text="How much edge color to blend (0 = none, 1 = full)", 
+                 foreground="gray", font=("TkDefaultFont", 8)).grid(row=4, column=1, sticky=tk.W, padx=5)
         
         # === AO / CREVICE EFFECTS ===
         ao_frame = ttk.LabelFrame(parent, text="Ambient Occlusion (Crevices)", padding="10")
         ao_frame.grid(row=4, column=0, sticky=(tk.W, tk.E), pady=(0, 10))
         
+        # Enable AO checkbox
+        self.enable_ao_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(ao_frame, text="Enable AO Effects", variable=self.enable_ao_var).grid(row=0, column=0, columnspan=3, sticky=tk.W, pady=(0, 5))
+        
         ttk.Label(ao_frame, text="Darken and tint crevices (optional, requires baked AO map)", 
-                 foreground="gray", font=("TkDefaultFont", 9, "italic")).grid(row=0, column=0, columnspan=3, sticky=tk.W, pady=(0, 10))
+                 foreground="gray", font=("TkDefaultFont", 9, "italic")).grid(row=1, column=0, columnspan=3, sticky=tk.W, pady=(0, 10))
         
         # AO Darken
-        ttk.Label(ao_frame, text="AO Darken:").grid(row=1, column=0, sticky=tk.W, pady=5)
+        ttk.Label(ao_frame, text="AO Darken:").grid(row=2, column=0, sticky=tk.W, pady=5)
         self.ao_darken_var = tk.DoubleVar(value=0.5)
         self.ao_darken_scale = ttk.Scale(ao_frame, from_=0.0, to=1.0, 
                                          variable=self.ao_darken_var, orient=tk.HORIZONTAL, 
                                          length=200, state="disabled")
-        self.ao_darken_scale.grid(row=1, column=1, sticky=tk.W, padx=5)
+        self.ao_darken_scale.grid(row=2, column=1, sticky=tk.W, padx=5)
         self.ao_darken_label = ttk.Label(ao_frame, text="0.50")
-        self.ao_darken_label.grid(row=1, column=2, sticky=tk.W)
+        self.ao_darken_label.grid(row=2, column=2, sticky=tk.W)
         self.ao_darken_var.trace_add('write', self.update_ao_darken_label)
         ttk.Label(ao_frame, text="Darken occluded areas (0 = none, 1 = black)", 
-                 foreground="gray", font=("TkDefaultFont", 8)).grid(row=2, column=1, sticky=tk.W, padx=5)
+                 foreground="gray", font=("TkDefaultFont", 8)).grid(row=3, column=1, sticky=tk.W, padx=5)
         
         # AO Color Picker
-        ttk.Label(ao_frame, text="AO Color:").grid(row=3, column=0, sticky=tk.W, pady=5)
+        ttk.Label(ao_frame, text="AO Color:").grid(row=4, column=0, sticky=tk.W, pady=5)
         
         self.ao_color_canvas = tk.Canvas(ao_frame, width=30, height=30, 
                                          highlightthickness=1, highlightbackground="#999", cursor="")
@@ -368,9 +389,22 @@ class PixelatorGUI:
         ttk.Label(ao_frame, text="Color to blend into occluded areas", 
                  foreground="gray", font=("TkDefaultFont", 8)).grid(row=4, column=1, sticky=tk.W, padx=5)
         
+        # AO Color Blend Strength
+        ttk.Label(ao_frame, text="AO Color Blend:").grid(row=5, column=0, sticky=tk.W, pady=5)
+        self.ao_blend_var = tk.DoubleVar(value=0.5)
+        self.ao_blend_scale = ttk.Scale(ao_frame, from_=0.0, to=1.0, 
+                                       variable=self.ao_blend_var, orient=tk.HORIZONTAL, 
+                                       length=200, state="disabled")
+        self.ao_blend_scale.grid(row=5, column=1, sticky=tk.W, padx=5)
+        self.ao_blend_label = ttk.Label(ao_frame, text="0.50")
+        self.ao_blend_label.grid(row=5, column=2, sticky=tk.W)
+        self.ao_blend_var.trace_add('write', self.update_ao_blend_label)
+        ttk.Label(ao_frame, text="How much AO color to blend (0 = none, 1 = full)", 
+                 foreground="gray", font=("TkDefaultFont", 8)).grid(row=6, column=1, sticky=tk.W, padx=5)
+        
         # === BAKE MAPS ===
         bake_frame = ttk.LabelFrame(parent, text="Bake Maps", padding="10")
-        bake_frame.grid(row=4, column=0, sticky=(tk.W, tk.E), pady=(0, 10))
+        bake_frame.grid(row=5, column=0, sticky=(tk.W, tk.E), pady=(0, 10))
         
         ttk.Label(bake_frame, text="Pre-generate curvature maps to save processing time", 
                  foreground="gray", font=("TkDefaultFont", 9, "italic")).grid(row=0, column=0, columnspan=3, sticky=tk.W, pady=(0, 10))
@@ -523,6 +557,12 @@ class PixelatorGUI:
     def update_curv_strength_label(self, *args):
         self.curv_strength_label.config(text=f"{self.curv_strength_var.get():.2f}")
     
+    def update_edge_blend_label(self, *args):
+        self.edge_blend_label.config(text=f"{self.edge_blend_var.get():.2f}")
+    
+    def update_ao_blend_label(self, *args):
+        self.ao_blend_label.config(text=f"{self.ao_blend_var.get():.2f}")
+    
     def update_edge_highlight_label(self, *args):
         self.edge_highlight_label.config(text=f"{self.edge_highlight_var.get():.2f}")
         self.mark_modified()
@@ -644,8 +684,12 @@ class PixelatorGUI:
             'enable_surface': self.enable_surface_var.get(),
             'model_path': self.model_path_var.get() if self.enable_surface_var.get() else None,
             'curvature_strength': self.curv_strength_var.get(),
+            'enable_edge': self.enable_edge_var.get(),
             'edge_highlight': self.edge_highlight_var.get(),
+            'edge_blend': self.edge_blend_var.get(),
+            'enable_ao': self.enable_ao_var.get(),
             'ao_darken': self.ao_darken_var.get(),
+            'ao_blend': self.ao_blend_var.get(),
             'edge_color': self.hex_to_rgb(self.edge_color_var),
             'ao_color': self.hex_to_rgb(self.ao_color_var),
             'pixel_width': self.pixel_width_var.get(),
@@ -963,8 +1007,6 @@ class PixelatorGUI:
         self.project_modified = False
         self.update_title()
         self.on_surface_toggle()
-        self.update_edge_color_button()
-        self.update_crevice_color_button()
     
     def save_project(self):
         """Save current project (use existing path or prompt)"""
@@ -1115,11 +1157,16 @@ class PixelatorGUI:
                 text=f"✓ Edge: edge.png ({size_mb:.1f} MB)",
                 foreground="green"
             )
+            # Enable edge controls
+            self.edge_highlight_scale.config(state="normal")
+            self.edge_blend_scale.config(state="normal")
         else:
             self.edge_status_label.config(
                 text="Edge: Not found (required)",
                 foreground="orange"
             )
+            self.edge_highlight_scale.config(state="disabled")
+            self.edge_blend_scale.config(state="disabled")
         
         # Check AO map
         if os.path.exists(ao_path):
@@ -1128,11 +1175,16 @@ class PixelatorGUI:
                 text=f"✓ AO: ao.png ({size_mb:.1f} MB)",
                 foreground="green"
             )
+            # Enable AO controls
+            self.ao_darken_scale.config(state="normal")
+            self.ao_blend_scale.config(state="normal")
         else:
             self.ao_status_label.config(
                 text="AO: Not found (optional)",
                 foreground="gray"
             )
+            self.ao_darken_scale.config(state="disabled")
+            self.ao_blend_scale.config(state="disabled")
     
     def bake_edge_maps(self):
         """Bake edge map from 3D model"""

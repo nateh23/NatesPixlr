@@ -388,9 +388,13 @@ class SurfaceEffectsBaker:
                                         edge_highlight: float = 0.3,
                                         edge_color: tuple = (255, 136, 0),
                                         edge_map_path: str = None,
+                                        edge_blend: float = 0.7,
+                                        enable_edge: bool = True,
                                         ao_darken: float = 0.5,
                                         ao_color: tuple = (50, 30, 20),
-                                        ao_map_path: str = None) -> Image.Image:
+                                        ao_map_path: str = None,
+                                        ao_blend: float = 0.5,
+                                        enable_ao: bool = True) -> Image.Image:
         """Apply surface effects using pre-baked edge and AO maps
         
         Args:
@@ -398,75 +402,76 @@ class SurfaceEffectsBaker:
             edge_highlight: Brightness boost on edges (0-1)
             edge_color: RGB tuple (0-255) to blend onto edges
             edge_map_path: Path to pre-baked edge map (REQUIRED)
+            edge_blend: Strength of edge color blending (0-1)
+            enable_edge: Whether to apply edge effects
             ao_darken: How much to darken crevices (0-1)
             ao_color: RGB tuple (0-255) to blend into occluded areas
             ao_map_path: Path to pre-baked AO map (optional)
+            ao_blend: Strength of AO color blending (0-1)
+            enable_ao: Whether to apply AO effects
             
         Returns:
             Texture with surface effects applied
         """
-        if not edge_map_path or not Path(edge_map_path).exists():
-            print("ERROR: Edge map is required. Please bake edge map first.")
-            return img
-        
         width, height = img.size
         
-        try:
-            # Load edge map
-            edge_img = Image.open(edge_map_path).convert('L')
-            if edge_img.size != (width, height):
-                edge_img = edge_img.resize((width, height), Image.BILINEAR)
-            edge_mask = np.array(edge_img, dtype=np.float32) / 255.0
-            print(f"Using edge map: {Path(edge_map_path).name}")
-        except Exception as e:
-            print(f"Failed to load edge map: {e}")
-            return img
-        
-        # Convert image to array
+        # Convert image to float array for blending
         img_array = np.array(img, dtype=np.float32)
         
-        # Apply edge effects
-        # 1. Brightness boost on edges
-        for c in range(3):
-            img_array[:, :, c] += edge_highlight * edge_mask * 255
-        
-        img_array = np.clip(img_array, 0, 255)
-        
-        # 2. Blend edge color
-        edge_color_array = np.array(edge_color, dtype=np.float32)
-        blend_strength = 0.7  # How much edge color to blend (increased for visibility)
-        
-        for c in range(3):
-            img_array[:, :, c] = img_array[:, :, c] * (1 - edge_mask * blend_strength) + \
-                                edge_color_array[c] * edge_mask * blend_strength
-        
-        # Apply AO effects if map provided
-        if ao_map_path and Path(ao_map_path).exists():
+        # FIRST: Apply AO effects (crevices) if enabled and map provided
+        if enable_ao and ao_map_path and Path(ao_map_path).exists():
             try:
-                # Load AO map
+                # Load AO map (white=bright/no occlusion, black=dark/full occlusion)
                 ao_img = Image.open(ao_map_path).convert('L')
                 if ao_img.size != (width, height):
                     ao_img = ao_img.resize((width, height), Image.BILINEAR)
-                ao_mask = np.array(ao_img, dtype=np.float32) / 255.0
+                ao_map = np.array(ao_img, dtype=np.float32) / 255.0
                 print(f"Using AO map: {Path(ao_map_path).name}")
                 
-                # Invert: 1=bright (not occluded), 0=dark (occluded)
-                occlusion_mask = 1.0 - ao_mask
+                # Invert: 0=bright (no occlusion), 1=dark (full occlusion in crevices)
+                crevice_mask = 1.0 - ao_map
                 
-                # 1. Darken occluded areas
-                for c in range(3):
-                    img_array[:, :, c] *= (1.0 - ao_darken * occlusion_mask)
-                
-                # 2. Blend AO color into crevices
+                # Mask AO color into crevices
+                # Where crevice_mask=1 (black in AO map), use pure ao_color
+                # Where crevice_mask=0 (white in AO map), keep original image
                 ao_color_array = np.array(ao_color, dtype=np.float32)
-                ao_blend_strength = 0.5
                 
                 for c in range(3):
-                    img_array[:, :, c] = img_array[:, :, c] * (1 - occlusion_mask * ao_blend_strength) + \
-                                        ao_color_array[c] * occlusion_mask * ao_blend_strength
+                    # Darken based on ao_darken, then blend color based on ao_blend
+                    darkened = img_array[:, :, c] * (1.0 - crevice_mask * ao_darken)
+                    img_array[:, :, c] = darkened * (1.0 - crevice_mask * ao_blend) + \
+                                        ao_color_array[c] * crevice_mask * ao_blend
                 
             except Exception as e:
                 print(f"Failed to load AO map: {e}")
+        
+        # SECOND: Apply edge effects on top if enabled and map provided
+        if enable_edge and edge_map_path and Path(edge_map_path).exists():
+            try:
+                # Load edge map (white=edges, black=no edges)
+                edge_img = Image.open(edge_map_path).convert('L')
+                if edge_img.size != (width, height):
+                    edge_img = edge_img.resize((width, height), Image.BILINEAR)
+                edge_mask = np.array(edge_img, dtype=np.float32) / 255.0
+                print(f"Using edge map: {Path(edge_map_path).name}")
+                
+                # Apply brightness boost on edges
+                for c in range(3):
+                    img_array[:, :, c] += edge_highlight * edge_mask * 255
+                
+                img_array = np.clip(img_array, 0, 255)
+                
+                # Mask edge color onto edges
+                # Where edge_mask=1 (white), blend in edge_color
+                # Where edge_mask=0 (black), keep current image
+                edge_color_array = np.array(edge_color, dtype=np.float32)
+                
+                for c in range(3):
+                    img_array[:, :, c] = img_array[:, :, c] * (1.0 - edge_mask * edge_blend) + \
+                                        edge_color_array[c] * edge_mask * edge_blend
+                
+            except Exception as e:
+                print(f"Failed to load edge map: {e}")
         
         img_array = np.clip(img_array, 0, 255).astype(np.uint8)
         return Image.fromarray(img_array)
@@ -476,46 +481,45 @@ class SurfaceEffectsBaker:
                           use_worldspace: bool = True) -> bool:
         """
         Bake curvature map from 3D model to a PNG file (edges only)
-        Uses Blender for proper normal map baking
+        Uses original UV-space edge detection
         
         Args:
             model_path: Path to 3D model file
             output_path: Path to save curvature map PNG
             resolution: Map resolution (width, height will match aspect)
-            strength: Curvature detection strength (unused with Blender)
-            use_worldspace: Unused, Blender handles this automatically
+            strength: Curvature detection strength
+            use_worldspace: Ignored, uses UV-space
             
         Returns:
             True if successful
         """
         try:
-            if not os.path.exists(self.blender_path):
-                print(f"Blender not found at: {self.blender_path}")
-                return False
-            
-            print(f"Baking edge map with Blender...")
-            
-            # Call Blender to bake normal map
-            cmd = [
-                self.blender_path,
-                "--background",
-                "--python", self.blender_script,
-                "--",
-                "edge",
-                model_path,
-                output_path,
-                str(resolution)
-            ]
-            
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
-            
-            if result.returncode == 0 and os.path.exists(output_path):
-                print(f"Edge map saved to: {output_path}")
-                return True
+            # Load model
+            if Path(model_path).suffix.lower() == '.obj':
+                if not self.load_obj(model_path):
+                    print("Failed to load model")
+                    return False
             else:
-                print(f"Blender baking failed:")
-                print(result.stderr)
+                print(f"Unsupported model format: {Path(model_path).suffix}")
                 return False
+            
+            # Use original UV-space edge detection
+            print("Baking edge map (UV-space)...")
+            curvature_map = self.compute_curvature_map(resolution, resolution, strength)
+            
+            # Normalize to 0-255 range (positive values only, edges)
+            curvature_map = np.maximum(0, curvature_map)  # Only positive curvature
+            if curvature_map.max() > 0:
+                curvature_map = np.clip(curvature_map / curvature_map.max() * 255, 0, 255).astype(np.uint8)
+            else:
+                curvature_map = np.zeros((resolution, resolution), dtype=np.uint8)
+            
+            # Save as grayscale PNG
+            img = Image.fromarray(curvature_map, mode='L')
+            img.save(output_path)
+            
+            print(f"Edge map saved to: {output_path}")
+            return True
             
         except Exception as e:
             print(f"Error baking edge map: {e}")
