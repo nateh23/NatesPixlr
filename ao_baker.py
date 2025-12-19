@@ -9,13 +9,15 @@ from scipy import ndimage
 import trimesh
 import subprocess
 import os
+import sys
+import shutil
 
 
 class SurfaceEffectsBaker:
     """Handles AO baking from 3D models onto textures"""
     
     def __init__(self):
-        self.blender_path = "/Applications/Blender.app/Contents/MacOS/Blender"
+        self.blender_path = self._find_blender()
         self.blender_script = str(Path(__file__).parent / "blender_baker.py")
         self.mesh_loaded = False
         self.vertices = None
@@ -23,6 +25,49 @@ class SurfaceEffectsBaker:
         self.normals = None
         self.faces = None
         self.trimesh_obj = None  # Store trimesh object for world-space baking
+    
+    def _find_blender(self) -> str:
+        """
+        Auto-detect Blender installation path based on OS
+        
+        Returns:
+            Path to Blender executable or 'blender' if in PATH
+        """
+        # First check if 'blender' is in PATH
+        if shutil.which('blender'):
+            return 'blender'
+        
+        # Platform-specific default paths
+        if sys.platform == 'darwin':  # macOS
+            possible_paths = [
+                "/Applications/Blender.app/Contents/MacOS/Blender",
+                "/Applications/Blender.app/Contents/MacOS/blender",
+            ]
+        elif sys.platform == 'win32':  # Windows
+            possible_paths = [
+                r"C:\Program Files\Blender Foundation\Blender 5.0\blender.exe",
+                r"C:\Program Files\Blender Foundation\Blender 4.5\blender.exe",
+                r"C:\Program Files\Blender Foundation\Blender 4.4\blender.exe",
+                r"C:\Program Files\Blender Foundation\Blender 4.3\blender.exe",
+                r"C:\Program Files\Blender Foundation\Blender 4.2\blender.exe",
+                r"C:\Program Files\Blender Foundation\Blender 4.1\blender.exe",
+                r"C:\Program Files\Blender Foundation\Blender 4.0\blender.exe",
+                r"C:\Program Files\Blender Foundation\Blender 3.6\blender.exe",
+                r"C:\Program Files\Blender Foundation\Blender\blender.exe",
+            ]
+        else:  # Linux
+            possible_paths = [
+                "/usr/bin/blender",
+                "/usr/local/bin/blender",
+            ]
+        
+        # Check each possible path
+        for path in possible_paths:
+            if os.path.exists(path):
+                return path
+        
+        # Default fallback - assume it's in PATH
+        return 'blender'
     
     def load_obj(self, obj_path: str) -> bool:
         """

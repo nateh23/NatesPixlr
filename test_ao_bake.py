@@ -1,12 +1,17 @@
 """Test AO baking with Blender"""
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 # Paths
 obj_path = str(Path.home() / "Desktop" / "swordTest.obj")
-output_path = "/tmp/test_ao_sword.png"
-blender_path = "/Applications/Blender.app/Contents/MacOS/Blender"
+output_path = str(Path(tempfile.gettempdir()) / "test_ao_sword.png")
+
+# Auto-detect Blender (import from ao_baker)
+from ao_baker import SurfaceEffectsBaker
+baker = SurfaceEffectsBaker()
+blender_path = baker.blender_path
 script_path = str(Path(__file__).parent / "blender_baker.py")
 
 print(f"Testing AO bake on: {obj_path}")

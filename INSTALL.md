@@ -6,17 +6,42 @@ If you just want to use the command-line version (no GUI needed):
 
 ```bash
 # Install dependencies
-pip3 install -r requirements.txt
+pip install -r requirements.txt
 
 # Process a texture
 python cli.py input.png output.png --preset ps1
 ```
 
-## GUI Installation (Optional)
+## GUI Installation
 
-The GUI requires tkinter, which may not be included with all Python installations on macOS.
+The GUI requires tkinter, which comes with most Python installations.
 
-### Option 1: Install Python with tkinter via Homebrew (Recommended)
+### Windows
+
+Python from python.org includes tkinter by default:
+
+```powershell
+# Create virtual environment
+python -m venv .venv
+.venv\Scripts\activate
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Launch GUI
+python gui.py
+```
+
+**Troubleshooting on Windows:**
+- If `python` doesn't work, try `py` or `python3`
+- Make sure Python 3.8+ is installed from python.org
+- Tkinter should be included - if not, reinstall Python and check "tcl/tk and IDLE"
+
+### macOS
+
+The GUI requires tkinter, which may not be included with all Python installations.
+
+### Option 1: Install Python with tkinter via Homebrew (Recommended for macOS)
 
 ```bash
 # Install Homebrew if you don't have it
@@ -34,7 +59,7 @@ pip install -r requirements.txt
 python gui.py
 ```
 
-### Option 2: Use system Python
+### Option 2: Use system Python (macOS)
 
 macOS system Python usually includes tkinter:
 
@@ -48,7 +73,7 @@ pip install -r requirements.txt
 python gui.py
 ```
 
-### Option 3: Install tkinter for your current Python
+### Option 3: Install tkinter for your current Python (macOS with pyenv)
 
 If you're using pyenv or another Python manager:
 
@@ -106,23 +131,45 @@ python cli.py input_folder/ output_folder/ \
 
 ## Troubleshooting
 
+### Windows
+**"'python' is not recognized"**
+- Install Python from python.org
+- Or use `py` instead of `python`
+
+**"No module named '_tkinter'"**
+- Reinstall Python and ensure "tcl/tk and IDLE" is checked during installation
+
+**GUI won't open**
+- Try the CLI version (`cli.py`) instead
+- Make sure tkinter is installed: `python -m tkinter`
+
+### macOS & Linux
 **"command not found: pip" or "command not found: python"**
 - Use `pip3` and `python3` instead
-- Or install Python: `brew install python`
+- Or install Python: `brew install python` (macOS)
 
 **GUI won't open**
 - Try the CLI version (`cli.py`) instead
 - Follow the tkinter installation steps above
 
 **"Permission denied"**
-- Use `pip3 install --user -r requirements.txt`
+- Use `pip install --user -r requirements.txt`
 - Or create a virtual environment first
 
-**Virtual environment not activating**
+**Virtual environment not activating (macOS/Linux)**
 ```bash
 # Create fresh venv
 rm -rf .venv
 python3 -m venv .venv
 source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+**Virtual environment not activating (Windows)**
+```powershell
+# Create fresh venv
+Remove-Item -Recurse -Force .venv
+python -m venv .venv
+.venv\Scripts\activate
 pip install -r requirements.txt
 ```
