@@ -466,7 +466,12 @@ class TexturePixelator:
             else:
                 image = image.convert('RGB')
             
-            # Phase 1: Surface Effects (apply BEFORE preprocessing so blur affects edges too)
+            # Phase 1: Greedy expansion FIRST (prevents background bleed at UV seams)
+            # MUST happen before edge highlights to avoid interfering with expansion algorithm
+            if enable_greedy_expand:
+                image = self.greedy_expand_pixels(image, iterations=greedy_iterations, threshold=15)
+            
+            # Phase 2: Surface Effects (apply AFTER greedy expansion so edges don't interfere)
             if enable_surface and baked_map_path:
                 print("Applying surface effects from baked maps...")
                 image = self.surface_baker.apply_surface_effects_to_texture(
@@ -474,16 +479,12 @@ class TexturePixelator:
                     ao_darken, ao_color, ao_map_path, ao_blend, enable_ao
                 )
             
-            # Phase 2: Preprocessing
+            # Phase 3: Preprocessing
             if blur_amount > 0 or noise_amount > 0 or color_variation > 0 or flood_fill_opacity > 0 or hue_shift != 0 or tint_strength > 0:
                 image = self.preprocess_image(image, blur_amount, noise_amount, color_variation,
                                              flood_fill_color, flood_fill_opacity, hue_shift, tint_strength)
             
-            # Phase 2.5: Greedy expansion BEFORE downsampling (prevents background bleed)
-            if enable_greedy_expand:
-                image = self.greedy_expand_pixels(image, iterations=greedy_iterations, threshold=15)
-            
-            # Phase 3: Pixelation
+            # Phase 4: Pixelation
             # Step 1: Downsample
             image = self.downsample_image(image, pixel_width, resample_mode)
             

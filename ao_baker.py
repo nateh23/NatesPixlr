@@ -462,8 +462,19 @@ class SurfaceEffectsBaker:
         """
         width, height = img.size
         
-        # Convert image to float array for blending
-        img_array = np.array(img, dtype=np.float32)
+        # Check if image has alpha channel and preserve it
+        has_alpha = img.mode == 'RGBA'
+        if has_alpha:
+            img_array = np.array(img, dtype=np.float32)
+            alpha_channel = img_array[:, :, 3].copy()  # Preserve original alpha
+            rgb_array = img_array[:, :, :3]
+            # Create mask where alpha > 0 (only apply effects to non-transparent areas)
+            opacity_mask = alpha_channel > 0
+        else:
+            # Convert image to float array for blending
+            img_array = np.array(img, dtype=np.float32)
+            rgb_array = img_array
+            opacity_mask = np.ones((height, width), dtype=bool)  # Apply everywhere for RGB images
         
         # FIRST: Apply AO effects (crevices) if enabled and map provided
         if enable_ao and ao_map_path and Path(ao_map_path).exists():
@@ -479,8 +490,8 @@ class SurfaceEffectsBaker:
                 crevice_mask = 1.0 - ao_map
                 
                 # CRITICAL: Ignore pure black areas (0) in AO map - these are outside the UV bounds
-                # Only apply AO where ao_map > 0 (has some brightness)
-                valid_ao_mask = ao_map > 0.0  # True where AO has data, False where pure black
+                # Only apply AO where ao_map > 0 (has some brightness) AND where pixel is not transparent
+                valid_ao_mask = (ao_map > 0.0) & opacity_mask  # True where AO has data AND pixel is opaque
                 
                 # Mask AO color into crevices
                 # Where crevice_mask=1 (black in AO map), use pure ao_color
@@ -489,12 +500,12 @@ class SurfaceEffectsBaker:
                 
                 for c in range(3):
                     # Darken based on ao_darken, then blend color based on ao_blend
-                    darkened = img_array[:, :, c] * (1.0 - crevice_mask * ao_darken)
+                    darkened = rgb_array[:, :, c] * (1.0 - crevice_mask * ao_darken)
                     blended = darkened * (1.0 - crevice_mask * ao_blend) + \
                              ao_color_array[c] * crevice_mask * ao_blend
                     
                     # Only apply AO where valid_ao_mask is True, keep original elsewhere
-                    img_array[:, :, c] = np.where(valid_ao_mask, blended, img_array[:, :, c])
+                    rgb_array[:, :, c] = np.where(valid_ao_mask, blended, rgb_array[:, :, c])
                 
             except Exception as e:
                 print(f"Failed to load AO map: {e}")
@@ -509,11 +520,14 @@ class SurfaceEffectsBaker:
                 edge_mask = np.array(edge_img, dtype=np.float32) / 255.0
                 print(f"Using edge map: {Path(edge_map_path).name}")
                 
+                # Only apply edge effects where pixel is not transparent
+                edge_mask = edge_mask * opacity_mask
+                
                 # Apply brightness boost on edges
                 for c in range(3):
-                    img_array[:, :, c] += edge_highlight * edge_mask * 255
+                    rgb_array[:, :, c] += edge_highlight * edge_mask * 255
                 
-                img_array = np.clip(img_array, 0, 255)
+                rgb_array = np.clip(rgb_array, 0, 255)
                 
                 # Apply saturation adjustment at edges
                 if edge_saturation != 0.0:
@@ -521,12 +535,12 @@ class SurfaceEffectsBaker:
                     for y in range(height):
                         for x in range(width):
                             if edge_mask[y, x] > 0.01:  # Only process edge pixels
-                                r, g, b = img_array[y, x] / 255.0
+                                r, g, b = rgb_array[y, x] / 255.0
                                 h, s, v = colorsys.rgb_to_hsv(r, g, b)
                                 # Adjust saturation (clamp to 0-1)
                                 s = np.clip(s + edge_saturation * edge_mask[y, x], 0.0, 1.0)
                                 r, g, b = colorsys.hsv_to_rgb(h, s, v)
-                                img_array[y, x] = [r * 255, g * 255, b * 255]
+                                rgb_array[y, x] = [r * 255, g * 255, b * 255]
                 
                 # Mask edge color onto edges
                 # Where edge_mask=1 (white), blend in edge_color
@@ -534,14 +548,21 @@ class SurfaceEffectsBaker:
                 edge_color_array = np.array(edge_color, dtype=np.float32)
                 
                 for c in range(3):
-                    img_array[:, :, c] = img_array[:, :, c] * (1.0 - edge_mask * edge_blend) + \
+                    rgb_array[:, :, c] = rgb_array[:, :, c] * (1.0 - edge_mask * edge_blend) + \
                                         edge_color_array[c] * edge_mask * edge_blend
                 
             except Exception as e:
                 print(f"Failed to load edge map: {e}")
         
-        img_array = np.clip(img_array, 0, 255).astype(np.uint8)
-        return Image.fromarray(img_array)
+        # Reconstruct final image with alpha channel if original had one
+        rgb_array = np.clip(rgb_array, 0, 255).astype(np.uint8)
+        
+        if has_alpha:
+            # Combine RGB with original alpha channel
+            result_array = np.dstack([rgb_array, alpha_channel.astype(np.uint8)])
+            return Image.fromarray(result_array, mode='RGBA')
+        else:
+            return Image.fromarray(rgb_array)
     
     def bake_curvature_map(self, model_path: str, output_path: str, 
                           resolution: int = 1024, strength: float = 5.0,
