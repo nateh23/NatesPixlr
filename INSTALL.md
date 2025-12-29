@@ -1,175 +1,162 @@
 # Installation Guide
 
-## Quick Start
+This guide will help you install and run Texture Pixelator on your computer. No programming experience needed!
 
-If you just want to use the command-line version (no GUI needed):
+## What You Need
 
-```bash
-# Install dependencies
+- Python 3.8 or newer
+- About 5-10 minutes to set up
+
+## Installation Steps
+
+### Step 1: Install Python
+
+Download and install Python from [python.org](https://www.python.org/downloads/)
+
+**Important for Windows users:** During installation, make sure to check the box that says **"Add Python to PATH"**. This makes it easier to use Python.
+
+### Step 2: Download Texture Pixelator
+
+Download this project and extract it to a folder on your computer (like `Documents\TexturePixelator`).
+
+### Step 3: Open Command Prompt/Terminal
+
+**Windows:**
+1. Press `Windows Key + R`
+2. Type `cmd` and press Enter
+3. Navigate to your TexturePixelator folder:
+   ```powershell
+   cd Documents\TexturePixelator
+   ```
+
+**macOS:**
+1. Press `Command + Space`
+2. Type `Terminal` and press Enter
+3. Navigate to your TexturePixelator folder:
+   ```bash
+   cd Documents/TexturePixelator
+   ```
+
+### Step 4: Install Required Libraries
+
+Copy and paste this command into your terminal/command prompt and press Enter:
+
+**Windows:**
+```powershell
 pip install -r requirements.txt
-
-# Process a texture
-python cli.py input.png output.png --preset ps1
 ```
 
-## GUI Installation
+**macOS:**
+```bash
+pip3 install -r requirements.txt
+```
 
-The GUI requires tkinter, which comes with most Python installations.
+This will download and install all the necessary components. It may take a minute or two.
 
-### Windows
+### Step 5: Launch the Application
 
-Python from python.org includes tkinter by default:
-
+**Windows:**
 ```powershell
-# Create virtual environment
-python -m venv .venv
-.venv\Scripts\activate
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Launch GUI
 python gui.py
 ```
 
-**Troubleshooting on Windows:**
-- If `python` doesn't work, try `py` or `python3`
-- Make sure Python 3.8+ is installed from python.org
-- Tkinter should be included - if not, reinstall Python and check "tcl/tk and IDLE"
+**macOS:**
+```bash
+python3 gui.py
+```
+
+The Texture Pixelator window should open and you're ready to go!
+
+## Easy Launch (Optional)
+
+### Windows
+
+For easier launching, you can use the included batch file:
+1. Double-click `launch.bat` in the project folder
+2. The application will start automatically
+
+Or create a desktop shortcut:
+1. Right-click `launch.bat`
+2. Select "Send to" → "Desktop (create shortcut)"
+3. Now you can double-click the shortcut to launch the app
 
 ### macOS
 
-The GUI requires tkinter, which may not be included with all Python installations.
-
-### Option 1: Install Python with tkinter via Homebrew (Recommended for macOS)
-
-```bash
-# Install Homebrew if you don't have it
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-
-# Install Python with tkinter support
-brew install python-tk@3.12
-
-# Use the Homebrew Python
-/opt/homebrew/bin/python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-
-# Launch GUI
-python gui.py
-```
-
-### Option 2: Use system Python (macOS)
-
-macOS system Python usually includes tkinter:
-
-```bash
-# Create venv with system Python
-/usr/bin/python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-
-# Launch GUI
-python gui.py
-```
-
-### Option 3: Install tkinter for your current Python (macOS with pyenv)
-
-If you're using pyenv or another Python manager:
-
-```bash
-# For pyenv users
-brew install tcl-tk
-env \
-  PATH="$(brew --prefix tcl-tk)/bin:$PATH" \
-  LDFLAGS="-L$(brew --prefix tcl-tk)/lib" \
-  CPPFLAGS="-I$(brew --prefix tcl-tk)/include" \
-  PKG_CONFIG_PATH="$(brew --prefix tcl-tk)/lib/pkgconfig" \
-  pyenv install 3.12.0
-
-pyenv local 3.12.0
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-```
-
-## Verify Installation
-
-Test tkinter:
-```bash
-python -m tkinter
-```
-This should open a small test window. If it does, you're good to go!
-
-## Using Without GUI
-
-The command-line interface (`cli.py`) works without tkinter and provides all the same functionality:
-
-```bash
-# See all options
-python cli.py --help
-
-# Quick presets
-python cli.py input.png output.png --preset ps1      # PS1/N64 style
-python cli.py input.png output.png --preset gameboy  # Game Boy style
-python cli.py input.png output.png --preset snes     # SNES style
-
-# Custom settings
-python cli.py input.png output.png \
-  --width 64 \
-  --bits 5 \
-  --dither bayer \
-  --matrix 4x4 \
-  --strength 0.4
-
-# Batch process
-python cli.py input_folder/ output_folder/ \
-  --batch \
-  --preset ps1 \
-  --suffix
-```
+Create a launch script:
+1. Open TextEdit
+2. Paste this code (replace with your actual path):
+   ```bash
+   #!/bin/bash
+   cd /Users/YourName/Documents/TexturePixelator
+   python3 gui.py
+   ```
+3. Save as `launch.command` in the project folder
+4. Open Terminal and make it executable:
+   ```bash
+   chmod +x launch.command
+   ```
+5. Now you can double-click `launch.command` to start the app
 
 ## Troubleshooting
 
-### Windows
-**"'python' is not recognized"**
-- Install Python from python.org
-- Or use `py` instead of `python`
+### Common Issues
 
-**"No module named '_tkinter'"**
-- Reinstall Python and ensure "tcl/tk and IDLE" is checked during installation
+#### Windows
 
-**GUI won't open**
-- Try the CLI version (`cli.py`) instead
-- Make sure tkinter is installed: `python -m tkinter`
+**"'python' is not recognized as an internal or external command"**
+- Python isn't installed or wasn't added to PATH during installation
+- Solution: Reinstall Python from python.org and check "Add Python to PATH"
+- Or try using `py` instead of `python` in the commands
 
-### macOS & Linux
-**"command not found: pip" or "command not found: python"**
-- Use `pip3` and `python3` instead
-- Or install Python: `brew install python` (macOS)
+**"No module named 'PIL'" or similar errors**
+- The required libraries didn't install correctly
+- Solution: Run `pip install -r requirements.txt` again
 
-**GUI won't open**
-- Try the CLI version (`cli.py`) instead
-- Follow the tkinter installation steps above
+**Application window won't open**
+- Tkinter (the GUI library) might not be installed
+- Solution: Reinstall Python and make sure "tcl/tk and IDLE" is checked during installation
 
-**"Permission denied"**
-- Use `pip install --user -r requirements.txt`
-- Or create a virtual environment first
+#### macOS
 
-**Virtual environment not activating (macOS/Linux)**
-```bash
-# Create fresh venv
-rm -rf .venv
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-```
+**"command not found: python" or "command not found: pip"**
+- Use `python3` and `pip3` instead of `python` and `pip`
 
-**Virtual environment not activating (Windows)**
-```powershell
-# Create fresh venv
-Remove-Item -Recurse -Force .venv
-python -m venv .venv
-.venv\Scripts\activate
-pip install -r requirements.txt
-```
+**Application window won't open (tkinter missing)**
+- macOS sometimes doesn't include tkinter by default
+- Solution: Install Python with tkinter support using Homebrew:
+  ```bash
+  # Install Homebrew (if you don't have it)
+  /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+  
+  # Install Python with tkinter
+  brew install python-tk@3.12
+  
+  # Use Homebrew Python
+  pip3 install -r requirements.txt
+  python3 gui.py
+  ```
+
+**"Permission denied" errors**
+- Try adding `--user` to the install command:
+  ```bash
+  pip3 install --user -r requirements.txt
+  ```
+
+#### Both Platforms
+
+**GUI is slow or unresponsive**
+- Processing large images takes time - be patient
+- Try processing smaller test images first
+- Close other applications to free up memory
+
+**Can't find the project folder**
+- Make sure you extracted the downloaded files
+- Note the full path to where you saved it
+- Use `cd` command to navigate to that exact location
+
+## Need More Help?
+
+If you're still having trouble:
+1. Make sure you're using Python 3.8 or newer (check with `python --version` or `python3 --version`)
+2. Try restarting your computer after installing Python
+3. Make sure you're in the correct folder when running commands (use `dir` on Windows or `ls` on macOS to see files)
