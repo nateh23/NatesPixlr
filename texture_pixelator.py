@@ -398,6 +398,124 @@ class TexturePixelator:
         
         img_array = np.clip(img_array, 0, 255).astype(np.uint8)
         return Image.fromarray(img_array)
+
+    def push_pull_fill(self, image: Image.Image, radius: int = 4) -> Image.Image:
+        """
+        Push-pull mip pyramid texture padding.
+
+        Classic game-engine approach (used by Substance, xNormal, etc.):
+        1. PUSH (downsample): build a Gaussian pyramid, at each level averaging
+           only valid (non-background) pixels so colour bleeds inward.
+        2. PULL (upsample): reconstruct back up, filling holes from coarser
+           levels while keeping original valid pixels intact.
+
+        Background is detected via alpha < 128 (RGBA) or by matching the
+        dominant edge colour (RGB), same heuristic as greedy_expand.
+
+        Args:
+            image:  Final processed image (RGB or RGBA).
+            radius: Controls how many pyramid levels to build.
+                    More levels = fills larger gaps.  levels = radius + 2.
+
+        Returns:
+            Image with background padding filled from nearby foreground.
+        """
+        img_arr = np.array(image, dtype=np.float32)
+        has_alpha = img_arr.ndim == 3 and img_arr.shape[2] == 4
+
+        if has_alpha:
+            rgb = img_arr[:, :, :3].copy()
+            alpha_orig = img_arr[:, :, 3].copy()
+            valid = (alpha_orig >= 128).astype(np.float32)
+        else:
+            rgb = img_arr.copy()
+            # Detect background the same way greedy_expand does: most common edge colour
+            h, w = rgb.shape[:2]
+            edge_pixels = []
+            edge_pixels.extend([tuple(rgb[0, x].astype(int)) for x in range(w)])
+            edge_pixels.extend([tuple(rgb[h-1, x].astype(int)) for x in range(w)])
+            edge_pixels.extend([tuple(rgb[y, 0].astype(int)) for y in range(1, h-1)])
+            edge_pixels.extend([tuple(rgb[y, w-1].astype(int)) for y in range(1, h-1)])
+            from collections import Counter
+            bg_color = np.array(Counter(edge_pixels).most_common(1)[0][0], dtype=np.float32)
+            diff = np.sqrt(np.sum((rgb - bg_color) ** 2, axis=2))
+            valid = (diff >= 15).astype(np.float32)  # same threshold as greedy_expand
+            alpha_orig = None
+
+        # Number of pyramid levels
+        levels = max(2, radius + 2)
+
+        # --- PUSH phase (downsample) ---
+        pyramid_rgb = [rgb.copy()]
+        pyramid_w = [valid.copy()]
+        cur_rgb = rgb.copy()
+        cur_w = valid.copy()
+
+        for _ in range(levels - 1):
+            ph, pw = cur_rgb.shape[:2]
+            nh, nw = max(1, ph // 2), max(1, pw // 2)
+            if nh < 1 or nw < 1:
+                break
+
+            # Weighted downsample: only average valid pixels
+            new_rgb = np.zeros((nh, nw, 3), dtype=np.float32)
+            new_w = np.zeros((nh, nw), dtype=np.float32)
+
+            # Accumulate 2x2 blocks
+            for dy in range(2):
+                for dx in range(2):
+                    sy = np.minimum(np.arange(nh) * 2 + dy, ph - 1)
+                    sx = np.minimum(np.arange(nw) * 2 + dx, pw - 1)
+                    sy_grid, sx_grid = np.meshgrid(sy, sx, indexing='ij')
+                    w_sample = cur_w[sy_grid, sx_grid]
+                    new_w += w_sample
+                    new_rgb += cur_rgb[sy_grid, sx_grid] * w_sample[:, :, np.newaxis]
+
+            # Normalise
+            mask = new_w > 0
+            for c in range(3):
+                new_rgb[:, :, c] = np.where(mask, new_rgb[:, :, c] / np.maximum(new_w, 1e-8), 0)
+            new_w = np.where(mask, 1.0, 0.0)
+
+            pyramid_rgb.append(new_rgb)
+            pyramid_w.append(new_w)
+            cur_rgb = new_rgb
+            cur_w = new_w
+
+        # --- PULL phase (upsample and composite) ---
+        cur_rgb = pyramid_rgb[-1].copy()
+        cur_w = pyramid_w[-1].copy()
+
+        for level in range(len(pyramid_rgb) - 2, -1, -1):
+            target_h, target_w = pyramid_rgb[level].shape[:2]
+            # Bilinear upsample of coarser level
+            coarse_img = Image.fromarray(np.clip(cur_rgb, 0, 255).astype(np.uint8))
+            coarse_up = np.array(
+                coarse_img.resize((target_w, target_h), Image.BILINEAR),
+                dtype=np.float32
+            )
+            coarse_w_img = Image.fromarray((np.clip(cur_w, 0, 1) * 255).astype(np.uint8))
+            coarse_w_up = np.array(
+                coarse_w_img.resize((target_w, target_h), Image.BILINEAR),
+                dtype=np.float32
+            ) / 255.0
+
+            # Composite: keep original valid pixels, fill holes from coarser level
+            fine_rgb = pyramid_rgb[level]
+            fine_w = pyramid_w[level]
+
+            blend = fine_w[:, :, np.newaxis]
+            cur_rgb = fine_rgb * blend + coarse_up * (1.0 - blend)
+            cur_w = np.maximum(fine_w, coarse_w_up)
+
+        # Reconstruct final image
+        result_rgb = np.clip(cur_rgb, 0, 255).astype(np.uint8)
+
+        if has_alpha:
+            result = np.dstack([result_rgb, alpha_orig.astype(np.uint8)])
+            return Image.fromarray(result, mode='RGBA')
+
+        return Image.fromarray(result_rgb, mode='RGB')
     
     def process_texture(self, input_path: str, output_path: str,
                        blur_amount: float = 0.0,
@@ -431,7 +549,9 @@ class TexturePixelator:
                        dither_mode: str = 'none',
                        bayer_size: int = 4,
                        dither_strength: float = 1.0,
-                       is_normal_map: bool = False) -> None:
+                       is_normal_map: bool = False,
+                       enable_uv_edge_fill: bool = False,
+                       uv_edge_fill_radius: int = 2) -> None:
         """
         Process a texture with all specified effects
         
@@ -528,7 +648,18 @@ class TexturePixelator:
             
             # Upscale with nearest neighbor to keep pixels sharp
             image = image.resize((final_width, final_height), Image.NEAREST)
-            
+
+            # Step 6: Post-upscale seam repair
+            # 6a: Push-pull mip pyramid fill (fills background padding around UV islands)
+            if enable_uv_edge_fill:
+                print("Applying push-pull mip pyramid seam fill...")
+                image = self.push_pull_fill(image, radius=uv_edge_fill_radius)
+
+            # 6b: Greedy expand post-upscale (flood foreground into any remaining fringe)
+            if enable_uv_edge_fill and enable_greedy_expand:
+                print("Applying post-upscale greedy expansion...")
+                image = self.greedy_expand_pixels(image, iterations=max(2, uv_edge_fill_radius), threshold=15)
+
             # Save output
             os.makedirs(os.path.dirname(output_path) if os.path.dirname(output_path) else '.', exist_ok=True)
             image.save(output_path)

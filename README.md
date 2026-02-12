@@ -7,6 +7,7 @@ A free alternative to Pixel8r for creating retro-style pixelated textures with d
 - **Pixelation**: Downsample textures to any resolution with nearest neighbor or bilinear filtering
 - **Color Quantization**: Reduce colors using bit depth reduction or adaptive palette quantization
 - **Dithering**: Apply Bayer matrix (2x2, 4x4, 8x8) or Floyd-Steinberg dithering
+- **UV Seam Fill (GUI)**: Post-upscale push-pull mip pyramid padding + greedy expansion to eliminate white edge seams
 - **Batch Processing**: Process entire folders of textures with consistent settings
 - **Simple GUI**: Easy parameter tweaking without preview overhead
 - **Alpha Channel Support**: Preserves transparency in textures
@@ -52,6 +53,7 @@ python gui.py
      - Bayer: Ordered dithering with matrix size
      - Floyd-Steinberg: Error diffusion dithering
    - **Dither Strength**: 0.0-1.0 (only for Bayer)
+   - **UV Seam Fill** (optional): push-pull texture padding to eliminate white corners at UV seam edges after upscale
 4. Click "Process Single File"
 
 #### Batch Processing:

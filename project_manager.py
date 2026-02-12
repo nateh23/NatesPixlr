@@ -99,6 +99,8 @@ class ProjectManager:
             'resample_mode': gui.resample_var.get(),
             'enable_greedy_expand': gui.enable_greedy_expand_var.get(),
             'greedy_iterations': gui.greedy_iterations_var.get(),
+            'enable_uv_edge_fill': gui.enable_uv_edge_fill_var.get() if hasattr(gui, 'enable_uv_edge_fill_var') else False,
+            'uv_edge_fill_radius': gui.uv_edge_fill_radius_var.get() if hasattr(gui, 'uv_edge_fill_radius_var') else 2,
             'quantize_method': gui.quantize_method_var.get(),
             'bits_per_channel': gui.bits_per_channel_var.get(),
             'palette_colors': gui.palette_colors_var.get(),
@@ -196,6 +198,11 @@ class ProjectManager:
                 gui.on_greedy_toggle()  # Update UI state
             if 'greedy_iterations' in settings:
                 gui.greedy_iterations_var.set(settings['greedy_iterations'])
+            if 'enable_uv_edge_fill' in settings and hasattr(gui, 'enable_uv_edge_fill_var'):
+                gui.enable_uv_edge_fill_var.set(settings['enable_uv_edge_fill'])
+                gui.on_uv_edge_fill_toggle()  # Update UI state
+            if 'uv_edge_fill_radius' in settings and hasattr(gui, 'uv_edge_fill_radius_var'):
+                gui.uv_edge_fill_radius_var.set(settings['uv_edge_fill_radius'])
             if 'quantize_method' in settings:
                 gui.quantize_method_var.set(settings['quantize_method'])
                 gui.on_quantize_method_change()  # Update UI state

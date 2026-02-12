@@ -149,6 +149,11 @@ Create a launch script:
 - Try processing smaller test images first
 - Close other applications to free up memory
 
+**UV Seam Fill doesn't seem to do anything**
+- Enable "UV Seam Fill" in the Pixelate tab and set strength to 4+
+- Works on any texture — no baked AO map required
+- Uses push-pull mip pyramid padding plus post-upscale greedy expansion
+
 **Can't find the project folder**
 - Make sure you extracted the downloaded files
 - Note the full path to where you saved it

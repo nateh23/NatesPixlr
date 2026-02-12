@@ -38,6 +38,7 @@ class PixelatorGUI:
         self.ao_color_var = '#321E14'  # Dark brown for AO
         
         self.setup_ui()
+        self.root.protocol("WM_DELETE_WINDOW", self.quit_application)
     
     def setup_ui(self):
         """Create the GUI layout"""
@@ -553,6 +554,26 @@ class PixelatorGUI:
         self.greedy_iterations_var.trace_add('write', self.update_greedy_label)
         ttk.Label(pixel_frame, text="How many pixels outward to expand (1=thin, 20=thick)", 
                  foreground="gray", font=("TkDefaultFont", 8)).grid(row=5, column=1, columnspan=2, sticky=tk.W, padx=5)
+
+        # UV seam fill toggle
+        self.enable_uv_edge_fill_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(pixel_frame, text="UV Seam Fill (push-pull + post-upscale greedy expand)",
+                   variable=self.enable_uv_edge_fill_var, command=self.on_uv_edge_fill_toggle).grid(row=6, column=0, columnspan=3, sticky=tk.W, pady=(10, 5))
+        ttk.Label(pixel_frame, text="Fills white corner/edge seams after upscale using texture padding + expansion",
+             foreground="gray", font=("TkDefaultFont", 8)).grid(row=7, column=0, columnspan=3, sticky=tk.W, padx=(20, 5))
+
+        # UV seam fill strength
+        ttk.Label(pixel_frame, text="Seam Fill Strength:").grid(row=8, column=0, sticky=tk.W, pady=5, padx=(20, 0))
+        self.uv_edge_fill_radius_var = tk.IntVar(value=4)
+        self.uv_edge_fill_slider = ttk.Scale(pixel_frame, from_=1, to=8,
+                             variable=self.uv_edge_fill_radius_var, orient=tk.HORIZONTAL,
+                             length=200, state="disabled")
+        self.uv_edge_fill_slider.grid(row=8, column=1, sticky=tk.W, padx=5)
+        self.uv_edge_fill_label = ttk.Label(pixel_frame, text="4")
+        self.uv_edge_fill_label.grid(row=8, column=2, sticky=tk.W)
+        self.uv_edge_fill_radius_var.trace_add('write', self.update_uv_edge_fill_label)
+        ttk.Label(pixel_frame, text="Pyramid depth / expansion passes (higher = fills larger gaps)",
+                 foreground="gray", font=("TkDefaultFont", 8)).grid(row=9, column=1, columnspan=2, sticky=tk.W, padx=5)
         
         # === COLOR QUANTIZATION ===
         color_frame = ttk.LabelFrame(parent, text="Color Quantization (Phase 2)", padding="10")
@@ -670,12 +691,21 @@ class PixelatorGUI:
     
     def update_greedy_label(self, *args):
         self.greedy_label.config(text=f"{self.greedy_iterations_var.get()}")
+
+    def update_uv_edge_fill_label(self, *args):
+        self.uv_edge_fill_label.config(text=f"{self.uv_edge_fill_radius_var.get()}")
     
     def on_greedy_toggle(self):
         """Enable/disable greedy expansion slider"""
         enabled = self.enable_greedy_expand_var.get()
         state = "normal" if enabled else "disabled"
         self.greedy_slider.config(state=state)
+
+    def on_uv_edge_fill_toggle(self):
+        """Enable/disable UV edge fill slider"""
+        enabled = self.enable_uv_edge_fill_var.get()
+        state = "normal" if enabled else "disabled"
+        self.uv_edge_fill_slider.config(state=state)
     
     def on_surface_toggle(self):
         """Enable/disable surface effect controls based on checkbox"""
@@ -807,6 +837,8 @@ class PixelatorGUI:
             'resample_mode': self.resample_var.get(),
             'enable_greedy_expand': self.enable_greedy_expand_var.get(),
             'greedy_iterations': self.greedy_iterations_var.get(),
+            'enable_uv_edge_fill': self.enable_uv_edge_fill_var.get(),
+            'uv_edge_fill_radius': self.uv_edge_fill_radius_var.get(),
             'quantize_method': self.quantize_method_var.get(),
             'bits_per_channel': self.bits_per_channel_var.get(),
             'palette_colors': self.palette_colors_var.get(),
@@ -1079,14 +1111,28 @@ class PixelatorGUI:
         file_menu.add_command(label="Save Project", command=self.save_project, accelerator="Cmd+S")
         file_menu.add_command(label="Save Project As...", command=self.save_project_as, accelerator="Cmd+Shift+S")
         file_menu.add_separator()
-        file_menu.add_command(label="Quit", command=self.root.quit, accelerator="Cmd+Q")
+        file_menu.add_command(label="Quit", command=self.quit_application, accelerator="Cmd+Q")
         
         # Keyboard shortcuts
         self.root.bind('<Command-n>', lambda e: self.new_project())
         self.root.bind('<Command-o>', lambda e: self.load_project())
         self.root.bind('<Command-s>', lambda e: self.save_project())
         self.root.bind('<Command-Shift-s>', lambda e: self.save_project_as())
-        self.root.bind('<Command-q>', lambda e: self.root.quit())
+        self.root.bind('<Command-q>', lambda e: self.quit_application())
+
+    def quit_application(self):
+        """Handle app close with unsaved project prompt."""
+        if self.project_modified:
+            result = messagebox.askyesnocancel(
+                "Unsaved Changes",
+                "Save current project before closing?"
+            )
+            if result is None:
+                return
+            if result and not self.save_project():
+                return
+
+        self.root.destroy()
     
     def new_project(self):
         """Create a new project (reset all settings)"""
@@ -1121,11 +1167,14 @@ class PixelatorGUI:
         self.dither_mode_var.set('bayer')
         self.bayer_size_var.set('4x4')
         self.dither_strength_var.set(0.5)
+        self.enable_uv_edge_fill_var.set(False)
+        self.uv_edge_fill_radius_var.set(4)
         
         self.current_project_path = None
         self.project_modified = False
         self.update_title()
         self.on_surface_toggle()
+        self.on_uv_edge_fill_toggle()
     
     def save_project(self):
         """Save current project (use existing path or prompt)"""
