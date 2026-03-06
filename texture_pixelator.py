@@ -326,14 +326,20 @@ class TexturePixelator:
         return quantized.convert('RGB')
     
     def apply_bayer_dither(self, image: Image.Image, matrix_size: str = '4x4', 
-                          strength: float = 1.0) -> Image.Image:
+                          strength: float = 1.0, color_levels: int = 8) -> Image.Image:
         """
-        Apply Bayer matrix dithering
+        Apply Bayer matrix dithering.
+        
+        The nudge is scaled relative to one quantization step so pixels near a
+        color boundary get pushed across it in a repeating pattern, creating
+        the classic ordered-dither checkerboard between two adjacent colors.
         
         Args:
             image: Input PIL Image
             matrix_size: '2x2', '4x4', or '8x8'
             strength: Dithering strength (0.0-1.0)
+            color_levels: How many color levels per channel will be used in
+                          the subsequent quantization step (e.g. 32 for 5-bit).
         
         Returns:
             Dithered PIL Image
@@ -341,7 +347,7 @@ class TexturePixelator:
         if matrix_size not in self.bayer_matrices:
             raise ValueError(f"Invalid matrix size: {matrix_size}")
         
-        img_array = np.array(image).astype(float) / 255.0
+        img_array = np.array(image).astype(float)
         matrix = self.bayer_matrices[matrix_size]
         
         # Tile the Bayer matrix to match image dimensions
@@ -355,8 +361,11 @@ class TexturePixelator:
         if len(img_array.shape) == 3:  # Color image
             tiled_matrix = np.expand_dims(tiled_matrix, axis=2)
         
-        dithered = img_array + (tiled_matrix - 0.5) * strength * (1.0 / 255.0)
-        dithered = np.clip(dithered * 255, 0, 255).astype(np.uint8)
+        # Scale nudge by one quantization step so the pattern can actually
+        # push pixels across colour boundaries.
+        step = 255.0 / max(color_levels - 1, 1)
+        dithered = img_array + (tiled_matrix - 0.5) * strength * step
+        dithered = np.clip(dithered, 0, 255).astype(np.uint8)
         
         return Image.fromarray(dithered)
     
@@ -613,8 +622,18 @@ class TexturePixelator:
             downsampled_height = image.height
             
             # Step 2: Apply dithering (before quantization for better results)
+            # Compute how many colour levels quantisation will produce so
+            # the dither nudge is scaled to one quantisation step.
+            if quantize_method == 'bit_depth':
+                dither_levels = 2 ** bits_per_channel
+            elif quantize_method == 'palette':
+                # Rough per-channel approximation for palette mode
+                dither_levels = max(2, int(round(palette_colors ** (1.0 / 3.0))))
+            else:
+                dither_levels = 256  # no quantisation → tiny nudge is fine
+            
             if dither_mode == 'bayer':
-                image = self.apply_bayer_dither(image, bayer_size, dither_strength)
+                image = self.apply_bayer_dither(image, bayer_size, dither_strength, dither_levels)
             elif dither_mode == 'floyd_steinberg':
                 color_levels = 2 ** bits_per_channel if quantize_method == 'bit_depth' else 8
                 image = self.apply_floyd_steinberg_dither(image, color_levels)

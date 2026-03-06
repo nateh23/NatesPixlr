@@ -113,6 +113,11 @@ class PixelatorGUI:
         self.preview_canvas.bind("<Button-4>", self.on_mousewheel_zoom)  # Linux
         self.preview_canvas.bind("<Button-5>", self.on_mousewheel_zoom)  # Linux
         
+        # Right-click drag to pan
+        self.preview_canvas.bind("<ButtonPress-3>", self.on_pan_start)
+        self.preview_canvas.bind("<B3-Motion>", self.on_pan_drag)
+        self.preview_canvas.bind("<ButtonRelease-3>", self.on_pan_end)
+        
         # Preview placeholder text (will be repositioned on first update)
         self.preview_text_id = self.preview_canvas.create_text(
             0, 0, 
@@ -907,11 +912,20 @@ class PixelatorGUI:
             # Clear canvas
             self.preview_canvas.delete("all")
             
-            # Update scroll region
-            self.preview_canvas.config(scrollregion=(0, 0, new_width, new_height))
+            # Center image: make scroll region at least as large as the canvas
+            canvas_width = self.preview_canvas.winfo_width()
+            canvas_height = self.preview_canvas.winfo_height()
+            if canvas_width <= 1:
+                canvas_width = 400
+                canvas_height = 640
+            region_w = max(canvas_width, new_width)
+            region_h = max(canvas_height, new_height)
             
-            # Draw image
-            self.preview_canvas.create_image(0, 0, image=self.preview_photo, anchor=tk.NW)
+            # Update scroll region
+            self.preview_canvas.config(scrollregion=(0, 0, region_w, region_h))
+            
+            # Draw image centered in scroll region
+            self.preview_canvas.create_image(region_w // 2, region_h // 2, image=self.preview_photo, anchor=tk.CENTER)
             
             # Update zoom label
             self.zoom_label.config(text=f"{int(self.preview_zoom * 100)}%")
@@ -972,6 +986,19 @@ class PixelatorGUI:
             self.preview_zoom = max(self.preview_zoom / 1.1, 0.1)
         
         self.render_preview()
+    
+    def on_pan_start(self, event):
+        """Begin right-click pan"""
+        self.preview_canvas.config(cursor="fleur")
+        self.preview_canvas.scan_mark(event.x, event.y)
+    
+    def on_pan_drag(self, event):
+        """Right-click drag to pan"""
+        self.preview_canvas.scan_dragto(event.x, event.y, gain=1)
+    
+    def on_pan_end(self, event):
+        """End right-click pan"""
+        self.preview_canvas.config(cursor="")
     
     def clear_messages(self):
         """Clear success and error messages"""
