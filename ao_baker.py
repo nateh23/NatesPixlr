@@ -13,12 +13,19 @@ import sys
 import shutil
 
 
+def _get_base_path():
+    """Get base path for bundled data files (works both dev and PyInstaller frozen)"""
+    if getattr(sys, 'frozen', False):
+        return Path(sys._MEIPASS)
+    return Path(__file__).parent
+
+
 class SurfaceEffectsBaker:
     """Handles AO baking from 3D models onto textures"""
     
     def __init__(self):
         self.blender_path = self._find_blender()
-        self.blender_script = str(Path(__file__).parent / "blender_baker.py")
+        self.blender_script = str(_get_base_path() / "blender_baker.py")
         self.mesh_loaded = False
         self.vertices = None
         self.uvs = None
